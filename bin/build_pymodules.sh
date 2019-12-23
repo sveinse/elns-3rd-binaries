@@ -58,12 +58,15 @@ echo "Installing packages"
 if [[ ! -d "$venv/dist" ]]; then
     echo "Unpacking '$archive.tar.xz'"
     mkdir -p "$venv/dist"
-    ( set -ex
-      tar -C "$venv/dist" -xf "../$archive.tar.xz"
+    tar -C "$venv/dist" -xf "../$archive.tar.xz"
+    if [[ "$os" = "Linux" ]]; then
+      cp -av $venv/dist/include/* $venv/include/
+      export LDFLAGS="-L$venv/dist/lib/"
+    else
       cp -av $venv/dist/include/* $venv/Include/
       mkdir -p $venv/Libs/
       cp -av $venv/dist/lib/* $venv/Libs/
-    ) || exit 1
+    fi
 fi
 dist="$(readlink -f "$venv/dist")"
 
