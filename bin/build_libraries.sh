@@ -148,6 +148,8 @@ else
     #
     build_portaudio() {
         download_unpack http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz portaudio
+        #git clone https://git.assembla.com/portaudio.git portaudio
+        #git clone git@github.com:sveinse/portaudio.git -bfeature-wasapi-spatial portaudio
         download_unpack https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
 
         d=portaudio/src/hostapi/asio/ASIOSDK
@@ -155,15 +157,34 @@ else
             mkdir -p "$d"
             cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
         fi
-        if [[ ! -e "portaudio/build/msvc/portaudio.vcxproj" ]]; then
+
+        d=portaudio/build/msvc
+        if [[ ! -e "$d/portaudio.vcxproj" ]]; then
+            # Insert new VC project
             tar -C portaudio/build/msvc -xvf ../portaudio-sln.tar.xz
+            # Remove old project files
+            rm -f $d/portaudio.dsp $d/portaudio.dsw $d/portaudio.vcproj
         fi
 
-        echo ""
-        echo "***** PORTAUDIO CAN NOW BE OPENED AND BUILT IN VISUAL STUDIO"
-        echo "      OPEN $PWD/portaudio/build/msvc/portaudio.sln"
-        echo "Press enter to continue..."
-        read
+        # Find MSBuild.exe candidates
+        msb=(/c/"Program Files (x86)"/"Microsoft Visual Studio"/*/*/MSBuild/*/Bin/MSBuild.exe)
+        if [[ ${#msb[@]} -eq 0 ]]; then
+            echo "ERROR  Unable to find any installed MSBuild.exe for automatic build."
+            echo "*****  PORTAUDIO CAN NOW BE OPENED AND BUILT IN VISUAL STUDIO"
+            echo "       OPEN $PWD/portaudio/build/msvc/portaudio.sln"
+            echo "Press enter to continue..."
+            read
+        else
+            msbuild="${msb[0]}"
+            for platform in win32; do  # x64
+                for config in Release; do # Debug
+                    ( set -ex;
+                      cd "portaudio/build/msvc";
+                      "$msbuild" portaudio.sln "//p:Configuration=$config" "//p:Platform=$platform"
+                    )
+                done
+            done
+        fi
 
         if [[ -d portaudio/build/msvc/Win32/Release ]]; then
             # Extract the win32 output
