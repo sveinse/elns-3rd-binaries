@@ -147,23 +147,23 @@ else
     # BUILDING PORTAUDIO
     #
     build_portaudio() {
-        download_unpack http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz portaudio
-        #git clone https://git.assembla.com/portaudio.git portaudio
-        #git clone git@github.com:sveinse/portaudio.git -bfeature-wasapi-spatial portaudio
+        port=portaudio
+
+        ( set -ex; 
+          rm -rf $port
+          #git clone https://git.assembla.com/portaudio.git $port
+          #git clone git@github.com:sveinse/portaudio.git -bfeature-wasapi-spatial $port
+          git clone git@github.com:sveinse/portaudio.git -b sveinse-master $port
+        ) || exit 1
+
+        #download_unpack http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $port
         download_unpack https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
 
-        d=portaudio/src/hostapi/asio/ASIOSDK
+        # ASIO support
+        d=$port/src/hostapi/asio/ASIOSDK
         if [[ ! -d "$d" ]]; then
             mkdir -p "$d"
             cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
-        fi
-
-        d=portaudio/build/msvc
-        if [[ ! -e "$d/portaudio.vcxproj" ]]; then
-            # Insert new VC project
-            tar -C portaudio/build/msvc -xvf ../portaudio-sln.tar.xz
-            # Remove old project files
-            rm -f $d/portaudio.dsp $d/portaudio.dsw $d/portaudio.vcproj
         fi
 
         # Find MSBuild.exe candidates
