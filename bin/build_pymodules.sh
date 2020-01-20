@@ -51,7 +51,8 @@ fi
 
 echo "Installing packages"
 ( set -x
-  $winpty $pip install --upgrade pip
+  # Use this technique to upgrade pip. Calling pip directly will fail on Windows
+  $winpty $python -m pip install --upgrade pip
   $winpty $pip install wheel
 ) || exit 1
 
