@@ -9,7 +9,7 @@ machine="$(uname -m)"
 
 if [[ "$os" = "Linux" ]]; then
     winpty=
-    python=python3
+    python=python3.7
     archive="elns-3rd-libraries-linux_${machine}"
 else
     winpty=winpty
@@ -103,9 +103,9 @@ EOF
     # BUILDING LIBSNDFILE
     #
     build_libsndfile() {
-        build http://downloads.xiph.org/releases/ogg/libogg-1.3.3.tar.xz libogg-1.3.3
+        build http://downloads.xiph.org/releases/ogg/libogg-1.3.4.tar.xz libogg-1.3.4
         build http://downloads.xiph.org/releases/vorbis/libvorbis-1.3.6.tar.xz libvorbis-1.3.6
-        build https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz flac-1.3.2
+        build https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.3.tar.xz flac-1.3.3
         build http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
     }
 
