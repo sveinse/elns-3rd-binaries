@@ -9,7 +9,7 @@ machine="$(uname -m)"
 
 if [[ "$os" = "Linux" ]]; then
     winpty=
-    python=python3
+    python=python3.7
     archive="elns-3rd-libraries-linux_${machine}"
 else
     winpty=winpty
