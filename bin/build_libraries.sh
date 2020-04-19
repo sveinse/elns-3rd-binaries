@@ -4,17 +4,21 @@
 base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$base"
 
-os="$(uname -s)"
-machine="$(uname -m)"
+# -- Running system
+case "$(uname)" in
+    *NT*)  sys=Windows ;;
+    *) sys= ;;
+esac
 
-if [[ "$os" = "Linux" ]]; then
-    winpty=
-    python=python3.7
-    archive="elns-3rd-libraries-linux_${machine}"
-else
+# -- Setup
+if [[ "$sys" = "Windows" ]]; then
     winpty=winpty
     python="py -3.7"
     archive="elns-3rd-libraries-windows_win32"
+else
+    winpty=
+    python=python3
+    archive="elns-3rd-libraries-linux_$(uname -m)"
 fi
 
 # Go to build dir
@@ -89,57 +93,7 @@ build() {
 }
 
 
-
-if [[ "$os" = "Linux" ]]; then
-
-    # --- LINUX BUILD START ---
-
-    cat <<EOF
-Required packages for building these libraries:
-   apt install build-essential pkg-config patchelf libasound2-dev
-EOF
-
-    #
-    # BUILDING LIBSNDFILE
-    #
-    build_libsndfile() {
-        build http://downloads.xiph.org/releases/ogg/libogg-1.3.4.tar.xz libogg-1.3.4
-        build http://downloads.xiph.org/releases/vorbis/libvorbis-1.3.6.tar.xz libvorbis-1.3.6
-        build https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.3.tar.xz flac-1.3.3
-        build http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
-    }
-
-    #
-    # BUILDING PORTAUDIO
-    #
-    build_portaudio() {
-        build http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz portaudio \
-             --without-asihpi \
-             --with-alsa \
-             --without-oss
-    }
-
-    #
-    # WHAT TO BUILD
-    #
-    build_libsndfile
-    build_portaudio
-
-    #
-    # COLLECTING DIST
-    #
-    ( cd "dist"; set -ex
-      tar -cvJf $base/$archive-complete.tar.xz .
-    ) || exit 1
-
-    ( cd "dist"; set -ex
-      tar -cvJf $base/$archive.tar.xz \
-        include \
-        lib/lib*.so*
-    ) || exit 1
-
-    # --- LINUX BUILD DONE ---
-else
+if [[ "$sys" = "Windows" ]]; then
 
     # --- WINDOWS BUILD START ---
 
@@ -149,7 +103,7 @@ else
     build_portaudio() {
         port=portaudio
 
-        ( set -ex; 
+        ( set -ex
           rm -rf $port
           #git clone https://git.assembla.com/portaudio.git $port
           #git clone git@github.com:sveinse/portaudio.git -bfeature-wasapi-spatial $port
@@ -270,5 +224,55 @@ else
     ) || exit 1
 
     # --- WINDOWS BUILD END ---
+
+else
+
+    # --- LINUX BUILD START ---
+
+    cat <<EOF
+Required packages for building these libraries:
+   apt install build-essential pkg-config patchelf libasound2-dev
+EOF
+
+    #
+    # BUILDING LIBSNDFILE
+    #
+    build_libsndfile() {
+        build http://downloads.xiph.org/releases/ogg/libogg-1.3.4.tar.xz libogg-1.3.4
+        build http://downloads.xiph.org/releases/vorbis/libvorbis-1.3.6.tar.xz libvorbis-1.3.6
+        build https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.3.tar.xz flac-1.3.3
+        build http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
+    }
+
+    #
+    # BUILDING PORTAUDIO
+    #
+    build_portaudio() {
+        build http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz portaudio \
+             --without-asihpi \
+             --with-alsa \
+             --without-oss
+    }
+
+    #
+    # WHAT TO BUILD
+    #
+    build_libsndfile
+    build_portaudio
+
+    #
+    # COLLECTING DIST
+    #
+    ( cd "dist"; set -ex
+      tar -cvJf $base/$archive-complete.tar.xz .
+    ) || exit 1
+
+    ( cd "dist"; set -ex
+      tar -cvJf $base/$archive.tar.xz \
+        include \
+        lib/lib*.so*
+    ) || exit 1
+
+    # --- LINUX BUILD DONE ---
 
 fi

@@ -4,26 +4,24 @@
 base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$base"
 
-os="$(uname -s)"
-machine="$(uname -m)"
+# -- Running system
+case "$(uname)" in
+    *NT*)  sys=Windows ;;
+    *) sys= ;;
+esac
 
-if [[ "$os" = "Linux" ]]; then
-    winpty=
-    python=python3.7
-    archive="elns-3rd-libraries-linux_${machine}"
-else
+# -- Setup
+if [[ "$sys" = "Windows" ]]; then
+    bindir=Scripts
     winpty=winpty
     python="py -3.7"
     archive="elns-3rd-libraries-windows_win32"
+else
+    bindir=bin
+    winpty=
+    python=python3
+    archive="elns-3rd-libraries-linux_$(uname -m)"
 fi
-
-if [[ "$os" = "Linux" ]]; then
-    cat <<EOF
-Required packages for building these modules:
-   apt install python3 python3-venv python3-dev build-essential
-EOF
-fi
-
 
 # Go to build dir
 mkdir -p build
@@ -40,36 +38,35 @@ if [[ ! -d "$venv" ]]; then
     ) || exit 1
 fi
 venv="$(realpath "$venv")"
-if [[ "$os" = "Linux" ]]; then
-    python="$venv/bin/python"
-    pip="$venv/bin/pip"
-else
-    python="$venv/Scripts/python"
-    pip="$venv/Scripts/pip"
-fi
+python="$venv/$bindir/python"
+pip="$venv/$bindir/pip"
 
 
 echo "Installing packages"
 ( set -x
   # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-  $winpty $python -m pip install --upgrade pip
-  $winpty $pip install wheel
+  $winpty $python -m pip install --upgrade pip wheel
 ) || exit 1
 
+
+# Unpack library into venv
 if [[ ! -d "$venv/dist" ]]; then
     echo "Unpacking '$archive.tar.xz'"
     mkdir -p "$venv/dist"
     tar -C "$venv/dist" -xf "../$archive.tar.xz"
-    if [[ "$os" = "Linux" ]]; then
-      cp -av $venv/dist/include/* $venv/include/
-      export LDFLAGS="-L$venv/dist/lib/"
-    else
+    if [[ "$sys" = "Windows" ]]; then
       cp -av $venv/dist/include/* $venv/Include/
       mkdir -p $venv/Libs/
       cp -av $venv/dist/lib/* $venv/Libs/
+    else
+      cp -av $venv/dist/include/* $venv/include/
+      export LDFLAGS="-L$venv/dist/lib/"
     fi
 fi
 dist="$(readlink -f "$venv/dist")"
+
+
+#------------------------------------------------------------------------------
 
 
 #--- PYAUDIO ---

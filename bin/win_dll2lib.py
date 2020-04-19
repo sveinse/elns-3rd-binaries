@@ -8,14 +8,15 @@ import re
 
 # Bat script to convert DLL to a DEF file input
 dumpbin = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars32.bat"
+CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars32.bat"
 @ECHO on
 DUMPBIN /exports "%1" >"%2"
 '''
 
+
 # Bat script to convert parsed DEF to LIB
 libbat = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvars32.bat"
+CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars32.bat"
 @ECHO on
 LIB /DEF:"%1" /OUT:"%2" /MACHINE:X86
 '''
