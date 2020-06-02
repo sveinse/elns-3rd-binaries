@@ -1,27 +1,46 @@
 #!/bin/bash
 
+rpath () {
+    python -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$1"
+}
+
 # dir is path to project dir
 base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$base"
 
+# Tool version
+TOOLVERSION='4'
+
 # -- Running system
 case "$(uname)" in
-    *NT*)  sys=Windows ;;
+    *NT*)  sys=windows ;;
+    *Darwin*)  sys=osx ;;
+    *Linux*)  sys=linux ;;
     *) sys= ;;
 esac
 
 # -- Setup
-if [[ "$sys" = "Windows" ]]; then
-    bindir=Scripts
-    winpty=winpty
-    python="py -3.7"
-    archive="elns-3rd-libraries-windows_win32"
-else
-    bindir=bin
-    winpty=
-    python=python3
-    archive="elns-3rd-libraries-linux_$(uname -m)"
-fi
+bindir=bin
+winpty=
+python=python3
+case "$sys" in
+    windows)
+        bindir=Scripts
+        winpty=winpty
+        python="py -3.7"
+        archive="elns-3rd-libraries-windows_win32"
+        ;;
+    osx)
+        archive="elns-3rd-libraries-osx_$(uname -m)"
+        ;;
+    linux)
+        archive="elns-3rd-libraries-linux_$(uname -m)"
+        ;;
+    *)
+        echo "ERROR: Don't know what to build for '$(uname)'"
+        exit 1
+        ;;
+esac
 
 # Go to build dir
 mkdir -p build
@@ -37,7 +56,7 @@ if [[ ! -d "$venv" ]]; then
       $winpty $python -m venv "$venv"
     ) || exit 1
 fi
-venv="$(realpath "$venv")"
+venv="$(rpath "$venv")"
 python="$venv/$bindir/python"
 pip="$venv/$bindir/pip"
 
@@ -54,16 +73,23 @@ if [[ ! -d "$venv/dist" ]]; then
     echo "Unpacking '$archive.tar.xz'"
     mkdir -p "$venv/dist"
     tar -C "$venv/dist" -xf "../$archive.tar.xz"
-    if [[ "$sys" = "Windows" ]]; then
-      cp -av $venv/dist/include/* $venv/Include/
-      mkdir -p $venv/Libs/
-      cp -av $venv/dist/lib/* $venv/Libs/
-    else
-      cp -av $venv/dist/include/* $venv/include/
-      export LDFLAGS="-L$venv/dist/lib/"
-    fi
+    case "$sys" in
+        windows)
+            cp -av $venv/dist/include/* $venv/Include/
+            mkdir -p $venv/Libs/
+            cp -av $venv/dist/lib/* $venv/Libs/
+            ;;
+        osx)
+            cp -av $venv/dist/include/* $venv/include/
+            export LDFLAGS="-L$venv/dist/lib/"
+            ;;
+        linux)
+            cp -av $venv/dist/include/* $venv/include/
+            export LDFLAGS="-L$venv/dist/lib/"
+            ;;
+    esac
 fi
-dist="$(readlink -f "$venv/dist")"
+dist="$(rpath "$venv/dist")"
 
 
 #------------------------------------------------------------------------------
