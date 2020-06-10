@@ -25,7 +25,8 @@ case "$sys" in
         archive="elns-3rd-libraries-windows_win32"
         ;;
     osx)
-        archive="elns-3rd-libraries-osx_$(uname -m)"
+        macver="10_14"
+        archive="elns-3rd-libraries-macosx_$(macver)_$(uname -m)"
         ;;
     linux)
         archive="elns-3rd-libraries-linux_$(uname -m)"
@@ -280,7 +281,7 @@ else
                 build $d --without-asihpi --with-alsa --without-oss
                 ;;
             osx)
-                build $d
+                build $d --disable-mac-universal
                 cp -av $d/include/pa_mac_core.h $dist/include
                 ;;
         esac
