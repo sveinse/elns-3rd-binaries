@@ -10,8 +10,16 @@ TOOLVERSION='4'
 # -- Running system
 case "$(uname)" in
     *NT*)  sys=windows ;;
-    *Darwin*)  sys=osx ;;
     *Linux*)  sys=linux ;;
+    *Darwin*)
+        sys=osx
+        macver="$(sw_vers -productVersion)"
+        case "$macver" in
+            10.15.*|10.14.*|10.13.*|10.12.*|10.11.*|10.10.*|10.9.*) macrel="10_9" ;;
+            10.8.*|10.7.*|10.6.*) macrel="10_6" ;;
+            *) macrel="0" ;;
+        esac
+        ;;
     *) sys= ;;
 esac
 
@@ -25,8 +33,7 @@ case "$sys" in
         archive="elns-3rd-libraries-windows_win32"
         ;;
     osx)
-        macver="10_14"
-        archive="elns-3rd-libraries-macosx_$(macver)_$(uname -m)"
+        archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
         ;;
     linux)
         archive="elns-3rd-libraries-linux_$(uname -m)"
@@ -40,6 +47,11 @@ EOF
         exit 1
         ;;
 esac
+
+# -- Helpers
+log () {
+    echo -e "\033[33m>>>>  $*\033[0m"
+}
 
 # Go to build dir
 mkdir -p build
@@ -254,18 +266,22 @@ else
     #
     build_libsndfile() {
         d=libogg-1.3.4
+        log "Building $d"
         download http://downloads.xiph.org/releases/ogg/$d.tar.xz $d ../../patches/patch-libogg-and-stdint-h.diff
         build    $d
 
         d=libvorbis-1.3.6
+        log "Building $d"
         download http://downloads.xiph.org/releases/vorbis/$d.tar.xz $d
         build    $d
 
         d=flac-1.3.3
+        log "Building $d"
         download https://ftp.osuosl.org/pub/xiph/releases/flac/$d.tar.xz $d
         build    $d
 
         d=libsndfile-1.0.28
+        log "Building $d"
         download http://www.mega-nerd.com/libsndfile/files/$d.tar.gz $d
         build    $d
     }
@@ -275,6 +291,7 @@ else
     #
     build_portaudio() {
         d=portaudio
+        log "Building $d"
         download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $d
         case "$sys" in
             linux)
@@ -306,6 +323,8 @@ else
       tar -cvJf $base/$archive.tar.xz "${files[@]}"
     ) || exit 1
 
+
+    log "Complete"
     # --- LINUX/OSX BUILD DONE ---
 
 fi

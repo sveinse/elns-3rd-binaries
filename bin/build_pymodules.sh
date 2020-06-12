@@ -14,8 +14,16 @@ TOOLVERSION='4'
 # -- Running system
 case "$(uname)" in
     *NT*)  sys=windows ;;
-    *Darwin*)  sys=osx ;;
     *Linux*)  sys=linux ;;
+    *Darwin*)
+        sys=osx
+        macver="$(sw_vers -productVersion)"
+        case "$macver" in
+            10.15.*|10.14.*|10.13.*|10.12.*|10.11.*|10.10.*|10.9.*) macrel="10_9" ;;
+            10.8.*|10.7.*|10.6.*) macrel="10_6" ;;
+            *) macrel="0" ;;
+        esac
+        ;;
     *) sys= ;;
 esac
 
@@ -31,8 +39,7 @@ case "$sys" in
         archive="elns-3rd-libraries-windows_win32"
         ;;
     osx)
-        macver="10_14"
-        archive="elns-3rd-libraries-macosx_${macver}_$(uname -m)"
+        archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
         ;;
     linux)
         archive="elns-3rd-libraries-linux_$(uname -m)"
@@ -43,6 +50,11 @@ case "$sys" in
         ;;
 esac
 
+# -- Helpers
+log () {
+    echo -e "\033[33m>>>>  $*\033[0m"
+}
+
 # Go to build dir
 mkdir -p build
 cd build
@@ -52,7 +64,7 @@ cd build
 venv="venv"
 
 if [[ ! -d "$venv" ]]; then
-    echo "Creating venv in '$venv'"
+    log "Creating venv in '$venv'"
     ( set -x
       $winpty $python -m venv "$venv"
     ) || exit 1
@@ -62,7 +74,7 @@ python="$venv/$bindir/python"
 pip="$venv/$bindir/pip"
 
 
-echo "Installing packages"
+log "Installing packages"
 ( set -x
   # Use this technique to upgrade pip. Calling pip directly will fail on Windows
   $winpty $python -m pip install --upgrade pip wheel
@@ -71,7 +83,7 @@ echo "Installing packages"
 
 # Unpack library into venv
 if [[ ! -d "$venv/dist" ]]; then
-    echo "Unpacking '$archive.tar.xz'"
+    log "Unpacking '$archive.tar.xz'"
     mkdir -p "$venv/dist"
     tar -C "$venv/dist" -xf "../$archive.tar.xz"
     case "$sys" in
@@ -99,13 +111,14 @@ dist="$(rpath "$venv/dist")"
 #--- PYAUDIO ---
 build_pyaudio() {
 
+
     # Get our modified version
     d=pyaudio
+    log "Building $d"
     ( set -x; if [[ ! -d "$d" ]]; then
       git clone https://github.com/sveinse/pyaudio.git -b feature-channel-split $d
       fi ) || exit 1
 
-    echo "Building pyaudio"
     ( cd $d; set -ex
       $winpty $pip wheel . --no-deps
       cp -av *.whl "../../"
@@ -116,6 +129,9 @@ build_pyaudio() {
 
 #--- PYSNDFILE ---
 build_pysndfile() {
+
+    log "Building pysndfile"
+
     ( set -x
       $winpty $pip install numpy cython
     ) || exit 1
@@ -135,7 +151,6 @@ build_pysndfile() {
     #  git clone https://github.com/roebel/pysndfile.git $d
     #  fi ) || exit 1
 
-    echo "Building pysndfile"
     ( cd $d; set -ex
       $winpty $pip wheel . --no-deps --no-build-isolation
       cp -av *.whl "../../"
@@ -147,6 +162,8 @@ build_pysndfile() {
 #--- TWISTED ---
 build_twisted() {
 
+    log "Building twisted"
+
     # Download the official version
     ( set -x
       $winpty $pip download --no-deps --no-binary=:all: twisted
@@ -156,7 +173,6 @@ build_twisted() {
     ) || exit 1
     d=Twisted-*/
 
-    echo "Building twisted"
     ( cd $d; set -ex
       $winpty $pip wheel . --no-deps;
       cp -av *.whl "../../"
