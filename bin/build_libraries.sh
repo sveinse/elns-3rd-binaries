@@ -1,4 +1,9 @@
 #!/bin/bash
+shopt -s nullglob
+
+rpath () {
+    (cd "$1" && pwd)
+}
 
 # dir is path to project dir
 base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
@@ -205,6 +210,7 @@ if [[ "$sys" = "windows" ]]; then
         fi
     }
 
+
     #
     # LIBSNDFILE
     #
@@ -242,11 +248,13 @@ if [[ "$sys" = "windows" ]]; then
         ) || exit 1
     }
 
+
     #
     # WHAT TO BUILD
     #
     build_portaudio
     build_libsndfile
+
 
     #
     # COLLECTING DIST
@@ -286,6 +294,7 @@ else
         build    $d
     }
 
+
     #
     # BUILDING PORTAUDIO
     #
@@ -304,11 +313,44 @@ else
         esac
     }
 
+
     #
     # WHAT TO BUILD
     #
     build_libsndfile
     build_portaudio
+
+
+    #
+    # OSX DYLIB LOAD REWRITE
+    # 
+    if [[ "$sys" = "osx" ]]; then
+        venv="venv-osx"
+
+        # Make fresh virtualenv for this
+        if [[ ! -d "$venv" ]]; then
+            log "Creating venv in '$venv'"
+            ( set -x
+            $winpty $python -m venv "$venv"
+            ) || exit 1
+        fi
+        venv="$(rpath "$venv")"
+        python="$venv/bin/python"
+        pip="$venv/bin/pip"
+
+        log "Installing packages"
+        ( set -x
+          # Use this technique to upgrade pip. Calling pip directly will fail on Windows
+          $python -m pip install --upgrade pip wheel
+          $pip install macholib
+        ) || exit 1
+
+        log "Rewriting libaray load paths"
+        ( set -ex; cd $dist/lib
+          $python $base/bin/osx_dylib_loadpath.py $PWD *.so *.dylib
+        ) || exit 1
+    fi
+
 
     #
     # COLLECTING DIST
@@ -318,13 +360,15 @@ else
     ) || exit 1
 
     ( cd "dist"; set -ex
-      shopt -s nullglob
       files=(include lib/lib*.so* lib/*.dylib)
       tar -cvJf $base/$archive.tar.xz "${files[@]}"
     ) || exit 1
 
 
-    log "Complete"
     # --- LINUX/OSX BUILD DONE ---
 
 fi
+
+log "Complete"
+cd ..
+rm -rf build

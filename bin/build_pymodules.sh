@@ -1,7 +1,8 @@
 #!/bin/bash
+shopt -s nullglob
 
 rpath () {
-    python -c "import os,sys; print(os.path.realpath(sys.argv[1]))" "$1"
+    (cd "$1" && pwd)
 }
 
 # dir is path to project dir
@@ -189,3 +190,8 @@ build_pysndfile
 
 # Twisted doesn't require compiler any more, cached build from pypi is ok
 #build_twisted
+
+
+log "Complete"
+cd ..
+rm -rf build
