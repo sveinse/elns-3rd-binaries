@@ -1,11 +1,8 @@
 #!/bin/bash
 shopt -s nullglob
 
-rpath () {
-    (cd "$1" && pwd)
-}
+rpath () {(cd "$1" && pwd)}
 
-# dir is path to project dir
 base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
 cd "$base"
 
@@ -31,12 +28,12 @@ esac
 # -- Setup
 bindir=bin
 winpty=
-python=python3
+python="${python:-python3}"
 case "$sys" in
     windows)
         bindir=Scripts
         winpty=winpty
-        python="py -3.7"
+        python="${python:-"py -3.7"}"
         archive="elns-3rd-libraries-windows_win32"
         ;;
     osx)
@@ -56,6 +53,7 @@ log () {
     echo -e "\033[33m>>>>  $*\033[0m"
 }
 
+
 # Go to build dir
 mkdir -p build
 cd build
@@ -66,7 +64,7 @@ venv="venv"
 
 if [[ ! -d "$venv" ]]; then
     log "Creating venv in '$venv'"
-    ( set -x
+    ( set -ex
       $winpty $python -m venv "$venv"
     ) || exit 1
 fi
@@ -76,7 +74,7 @@ pip="$venv/$bindir/pip"
 
 
 log "Installing packages"
-( set -x
+( set -ex
   # Use this technique to upgrade pip. Calling pip directly will fail on Windows
   $winpty $python -m pip install --upgrade pip wheel
 ) || exit 1
@@ -85,8 +83,10 @@ log "Installing packages"
 # Unpack library into venv
 if [[ ! -d "$venv/dist" ]]; then
     log "Unpacking '$archive.tar.xz'"
-    mkdir -p "$venv/dist"
-    tar -C "$venv/dist" -xf "../$archive.tar.xz"
+    ( set -ex
+      mkdir -p "$venv/dist"
+      tar -C "$venv/dist" -xf "../$archive.tar.xz"
+    ) || exit 1
     case "$sys" in
         windows)
             cp -av $venv/dist/include/* $venv/Include/
@@ -112,13 +112,13 @@ dist="$(rpath "$venv/dist")"
 #--- PYAUDIO ---
 build_pyaudio() {
 
-
     # Get our modified version
     d=pyaudio
     log "Building $d"
-    ( set -x; if [[ ! -d "$d" ]]; then
+    ( set -ex; if [[ ! -d "$d" ]]; then
       git clone https://github.com/sveinse/pyaudio.git -b feature-channel-split $d
-      fi ) || exit 1
+      fi 
+    ) || exit 1
 
     ( cd $d; set -ex
       $winpty $pip wheel . --no-deps
@@ -133,15 +133,15 @@ build_pysndfile() {
 
     log "Building pysndfile"
 
-    ( set -x
+    ( set -ex
       $winpty $pip install numpy cython
     ) || exit 1
 
     # Download the official version
-    ( set -x;
+    ( set -ex
       $winpty $pip download --no-deps --no-binary=:all: --no-build-isolation pysndfile
     ) || exit 1
-    ( set -x;
+    ( set -ex
       tar -xf pysndfile-*.tar.gz
     ) || exit 1
     d=pysndfile-1.*/
@@ -166,10 +166,10 @@ build_twisted() {
     log "Building twisted"
 
     # Download the official version
-    ( set -x
+    ( set -ex
       $winpty $pip download --no-deps --no-binary=:all: twisted
     ) || exit 1
-    ( set -x
+    ( set -ex
       tar -xf Twisted-*.tar.bz2
     ) || exit 1
     d=Twisted-*/
@@ -187,9 +187,7 @@ build_twisted() {
 #
 build_pyaudio
 build_pysndfile
-
-# Twisted doesn't require compiler any more, cached build from pypi is ok
-#build_twisted
+#build_twisted  # Twisted doesn't require compiler any more, cached build from pypi is ok
 
 
 log "Complete"

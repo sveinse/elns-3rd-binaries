@@ -1,12 +1,10 @@
 #!/bin/bash
 shopt -s nullglob
 
-rpath () {
-    (cd "$1" && pwd)
-}
+rpath () {(cd "$1" && pwd)}
 
-# dir is path to project dir
-base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+# path to project dir
+base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 cd "$base"
 
 # Tool version
@@ -30,7 +28,7 @@ esac
 
 # -- Setup
 winpty=
-python=python3
+python="${python:-python3}"
 case "$sys" in
     windows)
         winpty=winpty
@@ -88,12 +86,12 @@ download() {
             case "$name" in
                 *.tar|*.tgz|*.tar.xz|*.tar.gz)
                     ( set -ex
-                    tar -xf "$name"
+                      tar -xf "$name"
                     ) || exit 1
                     ;;
                 *.zip)
-                    ( set -x
-                    unzip "$name" -d "$dir"
+                    ( set -ex
+                      unzip "$name" -d "$dir"
                     ) || exit 1
                     ;;
                 *)
@@ -105,9 +103,9 @@ download() {
 
     # Patch the output
     while [[ "$#" -gt 0 ]]; do
-        ( cd "$dir"
-            patch -p0 <"$1"
-        )
+        ( set -ex; cd "$dir"
+          patch -p0 <"$1"
+        ) || exit 1
         shift
     done
 }
@@ -153,8 +151,10 @@ if [[ "$sys" = "windows" ]]; then
         # ASIO support
         d=$port/src/hostapi/asio/ASIOSDK
         if [[ ! -d "$d" ]]; then
-            mkdir -p "$d"
-            cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
+            ( set -ex
+              mkdir -p "$d"
+              cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
+            ) || exit 1
         fi
 
         # Find MSBuild.exe candidates
@@ -169,10 +169,10 @@ if [[ "$sys" = "windows" ]]; then
             msbuild="${msb[0]}"
             for platform in win32; do  # x64
                 for config in Release; do # Debug
-                    ( set -ex;
+                    ( set -ex
                       cd "portaudio/build/msvc";
                       "$msbuild" portaudio.sln "//p:Configuration=$config" "//p:Platform=$platform"
-                    )
+                    ) || exit 1
                 done
             done
         fi
@@ -186,10 +186,12 @@ if [[ "$sys" = "windows" ]]; then
             #tar -C win32 -cvJf ../portaudio-v190600-win_win32.tar.xz .
             #rm -rf win32
             if [[ ! "$x64" ]]; then
-                mkdir -p $dist/include $dist/lib
-                cp -av portaudio/include/portaudio.h $dist/include/
-                cp -av $d/portaudio.dll $dist/lib/
-                cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ( set -ex
+                  mkdir -p $dist/include $dist/lib
+                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av $d/portaudio.dll $dist/lib/
+                  cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ) || exit 1
             fi
         fi
 
@@ -202,10 +204,12 @@ if [[ "$sys" = "windows" ]]; then
             #tar -C x64 -cvJf ../portaudio-v190600-win_x64.tar.xz .
             #rm -rf x64
             if [[ "$x64" ]]; then
-                mkdir -p $dist/include $dist/lib
-                cp -av portaudio/include/portaudio.h $dist/include/
-                cp -av $d/portaudio.dll $d/portaudio_*.lib $dist/lib/
-                cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ( set -ex
+                  mkdir -p $dist/include $dist/lib
+                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av $d/portaudio.dll $d/portaudio_*.lib $dist/lib/
+                  cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ) || exit 1
             fi
         fi
     }
@@ -330,8 +334,8 @@ else
         # Make fresh virtualenv for this
         if [[ ! -d "$venv" ]]; then
             log "Creating venv in '$venv'"
-            ( set -x
-            $winpty $python -m venv "$venv"
+            ( set -ex
+              $python -m venv "$venv"
             ) || exit 1
         fi
         venv="$(rpath "$venv")"
@@ -339,7 +343,7 @@ else
         pip="$venv/bin/pip"
 
         log "Installing packages"
-        ( set -x
+        ( set -ex
           # Use this technique to upgrade pip. Calling pip directly will fail on Windows
           $python -m pip install --upgrade pip wheel
           $pip install macholib
