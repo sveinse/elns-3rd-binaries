@@ -1,85 +1,127 @@
 #!/bin/bash
+shopt -s nullglob
 
-# dir is path to project dir
-base="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )"
+rpath () {(cd "$1" && pwd)}
+
+# path to project dir
+base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 cd "$base"
+
+# Tool version
+TOOLVERSION='4'
+
+# Directory to place output into
+dist=dist
 
 # -- Running system
 case "$(uname)" in
-    *NT*)  sys=Windows ;;
+    *NT*)
+        sys=windows
+        python="${python:-"py -3.7"}"
+        bits="$($python -c'import platform;print(platform.architecture()[0])')"
+        case "$bits" in
+          32bit) arch='win32' ;;
+          64bit) arch='x64' ;;
+          *) echo "ERROR: Unknown architecture bits '$bits'"; exit 1 ;;
+        esac
+        ;;
+    *Linux*)  sys=linux ;;
+    *Darwin*)
+        sys=macosx
+        macver="$(sw_vers -productVersion)"
+        case "$macver" in
+            10.15.*|10.14.*|10.13.*|10.12.*|10.11.*|10.10.*|10.9.*) macrel="10_9" ;;
+            10.8.*|10.7.*|10.6.*) macrel="10_6" ;;
+            *) macrel="0" ;;
+        esac
+        ;;
     *) sys= ;;
 esac
 
 # -- Setup
-if [[ "$sys" = "Windows" ]]; then
-    winpty=winpty
-    python="py -3.7"
-    archive="elns-3rd-libraries-windows_win32"
-else
-    winpty=
-    python=python3
-    archive="elns-3rd-libraries-linux_$(uname -m)"
-fi
+winpty=
+bindir=bin
+python="${python:-python3}"
+case "$sys" in
+    windows)
+        #winpty=winpty
+        bindir=Scripts
+        archive="elns-3rd-libraries-windows_${arch}"
+        ;;
+    macosx)
+        archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
+        ;;
+    linux)
+        archive="elns-3rd-libraries-linux_$(uname -m)"
+        ;;
+    *)
+        echo "ERROR: Don't know what to build for '$(uname)'"
+        exit 1
+        ;;
+esac
+
+# -- Helpers
+log () {
+    echo -e "\033[33m>>>>  $*\033[0m"
+}
+
 
 # Go to build dir
 mkdir -p build
 cd build
-
-# Directory to place output into
-dist=dist
 
 
 download() {
 
     url="$1"
     name="${url##*/}"
+    shift
 
+    # Download
     if [[ ! -e "$name" ]]; then
         ( set -ex
           curl -# -L "$url" -o "$name"
         ) || exit 1
     fi
-}
 
-unpack() {
+    # Unpack
+    if [[ $# -gt 0 ]]; then
+        dir="$1"
+        shift
 
-    url="$1"
-    name="${url##*/}"
-    dir="$2"
-
-    if [[ ! -d "$dir" ]]; then
-        case "$name" in
-            *.tar|*.tgz|*.tar.xz|*.tar.gz)
-                ( set -ex
-                  tar -xf "$name"
-                ) || exit 1
-                ;;
-            *.zip)
-                ( set -x
-                  unzip "$name" -d "$dir"
-                ) || exit 1
-                ;;
-            *)
-                echo "ERROR: Don't know how to unpack '$name'"
-                exit 1
-        esac
+        if [[ ! -d "$dir" ]]; then
+            case "$name" in
+                *.tar|*.tgz|*.tar.xz|*.tar.gz)
+                    ( set -ex
+                      tar -xf "$name"
+                    ) || exit 1
+                    ;;
+                *.zip)
+                    ( set -ex
+                      unzip "$name" -d "$dir"
+                    ) || exit 1
+                    ;;
+                *)
+                    echo "ERROR: Don't know how to unpack '$name'"
+                    exit 1
+            esac
+        fi
     fi
+
+    # Patch the output
+    while [[ "$#" -gt 0 ]]; do
+        ( set -ex; cd "$dir"
+          patch -p0 <"$1"
+        ) || exit 1
+        shift
+    done
 }
 
-download_unpack() {
-    download "$1"
-    unpack "$1" "$2"
-}
 
 build() {
 
-    url="$1"
-    name="${url##*/}"
-    dir="$2"
-    shift 2
-
-    download "$url"
-    unpack "$url" "$dir"
+    dir="$1"
+    shift
 
     # Build
     ( set -ex
@@ -93,7 +135,7 @@ build() {
 }
 
 
-if [[ "$sys" = "Windows" ]]; then
+if [[ "$sys" = "windows" ]]; then
 
     # --- WINDOWS BUILD START ---
 
@@ -110,14 +152,16 @@ if [[ "$sys" = "Windows" ]]; then
           git clone git@github.com:sveinse/portaudio.git -b sveinse-master $port
         ) || exit 1
 
-        #download_unpack http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $port
-        download_unpack https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
+        #download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $port
+        download https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
 
         # ASIO support
         d=$port/src/hostapi/asio/ASIOSDK
         if [[ ! -d "$d" ]]; then
-            mkdir -p "$d"
-            cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
+            ( set -ex
+              mkdir -p "$d"
+              cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
+            ) || exit 1
         fi
 
         # Find MSBuild.exe candidates
@@ -130,12 +174,12 @@ if [[ "$sys" = "Windows" ]]; then
             read
         else
             msbuild="${msb[0]}"
-            for platform in win32; do  # x64
+            for platform in "$arch"; do
                 for config in Release; do # Debug
-                    ( set -ex;
+                    ( set -ex
                       cd "portaudio/build/msvc";
                       "$msbuild" portaudio.sln "//p:Configuration=$config" "//p:Platform=$platform"
-                    )
+                    ) || exit 1
                 done
             done
         fi
@@ -148,11 +192,13 @@ if [[ "$sys" = "Windows" ]]; then
             #cp -av portaudio/include/portaudio.h $d/portaudio.dll $d/portaudio_*.lib win32/
             #tar -C win32 -cvJf ../portaudio-v190600-win_win32.tar.xz .
             #rm -rf win32
-            if [[ ! "$x64" ]]; then
-                mkdir -p $dist/include $dist/lib
-                cp -av portaudio/include/portaudio.h $dist/include/
-                cp -av $d/portaudio.dll $dist/lib/
-                cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+            if [[ "$arch" = "win32" ]]; then
+                ( set -ex
+                  mkdir -p $dist/include $dist/lib
+                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av $d/portaudio.dll $dist/lib/
+                  cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ) || exit 1
             fi
         fi
 
@@ -164,28 +210,37 @@ if [[ "$sys" = "Windows" ]]; then
             #cp -av portaudio/include/portaudio.h $d/portaudio.dll $d/portaudio_*.lib x64/
             #tar -C x64 -cvJf ../portaudio-v190600-win_x64.tar.xz .
             #rm -rf x64
-            if [[ "$x64" ]]; then
-                mkdir -p $dist/include $dist/lib
-                cp -av portaudio/include/portaudio.h $dist/include/
-                cp -av $d/portaudio.dll $d/portaudio_*.lib $dist/lib/
-                cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+            if [[ "$arch" = "x64" ]]; then
+                ( set -ex
+                  mkdir -p $dist/include $dist/lib
+                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av $d/portaudio.dll $dist/lib/
+                  cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
+                ) || exit 1
             fi
         fi
     }
+
 
     #
     # LIBSNDFILE
     #
     build_libsndfile() {
         # Get the sources for reference and licenses
-        #download_unpack http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
-        #download_unpack https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-1.3.2.tar.xz libogg-1.3.2
-        #download_unpack https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.5.tar.xz libvorbis-1.3.5
-        #download_unpack https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz flac-1.3.2
+        #download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
+        #download https://ftp.osuosl.org/pub/xiph/releases/ogg/libogg-1.3.2.tar.xz libogg-1.3.2
+        #download https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.5.tar.xz libvorbis-1.3.5
+        #download https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz flac-1.3.2
+
+        case "$arch" in
+            win32) vd=w32; fd=32bit ;;
+            x64) vd=w64; fd=64bit ;;
+            *) echo "Unknown arch '$arch'"; exit 1 ;;
+        esac
 
         # Get the official windows release
-        d=libsndfile-1.0.28-w32
-        download_unpack http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-w32.zip $d
+        d=libsndfile-1.0.28-${vd}
+        download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-${vd}.zip $d
         mkdir -p $dist/include
         #cp -av $d/bin/*.dll $d/lib/*.lib $dist/lib
         cp -av $d/include/*.h $d/include/*.hh $dist/include/
@@ -202,19 +257,21 @@ if [[ "$sys" = "Windows" ]]; then
             ) || exit 1
         fi
         mkdir -p $dist/lib
-        cp -av $d/libsndfile32bit.dll $dist/lib/
+        cp -av $d/libsndfile${fd}.dll $dist/lib/
 
         # Generate the libsndfile.lib from the dll:
         ( set -ex; cd $dist/lib
-          $winpty $python $base/bin/win_dll2lib.py libsndfile32bit.dll sndfile.lib
+          $winpty $python $base/bin/win_dll2lib.py --arch $arch libsndfile${fd}.dll sndfile.lib
         ) || exit 1
     }
+
 
     #
     # WHAT TO BUILD
     #
     build_portaudio
     build_libsndfile
+
 
     #
     # COLLECTING DIST
@@ -227,38 +284,90 @@ if [[ "$sys" = "Windows" ]]; then
 
 else
 
-    # --- LINUX BUILD START ---
-
-    cat <<EOF
-Required packages for building these libraries:
-   apt install build-essential pkg-config patchelf libasound2-dev
-EOF
+    # --- LINUX/MACOSX BUILD START ---
 
     #
     # BUILDING LIBSNDFILE
     #
     build_libsndfile() {
-        build http://downloads.xiph.org/releases/ogg/libogg-1.3.4.tar.xz libogg-1.3.4
-        build http://downloads.xiph.org/releases/vorbis/libvorbis-1.3.6.tar.xz libvorbis-1.3.6
-        build https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.3.tar.xz flac-1.3.3
-        build http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28.tar.gz libsndfile-1.0.28
+        d=libogg-1.3.4
+        log "Building $d"
+        download http://downloads.xiph.org/releases/ogg/$d.tar.xz $d ../../patches/patch-libogg-and-stdint-h.diff
+        build    $d
+
+        d=libvorbis-1.3.6
+        log "Building $d"
+        download http://downloads.xiph.org/releases/vorbis/$d.tar.xz $d
+        build    $d
+
+        d=flac-1.3.3
+        log "Building $d"
+        download https://ftp.osuosl.org/pub/xiph/releases/flac/$d.tar.xz $d
+        build    $d
+
+        d=libsndfile-1.0.28
+        log "Building $d"
+        download http://www.mega-nerd.com/libsndfile/files/$d.tar.gz $d
+        build    $d
     }
+
 
     #
     # BUILDING PORTAUDIO
     #
     build_portaudio() {
-        build http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz portaudio \
-             --without-asihpi \
-             --with-alsa \
-             --without-oss
+        d=portaudio
+        log "Building $d"
+        download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $d
+        case "$sys" in
+            linux)
+                build $d --without-asihpi --with-alsa --without-oss
+                ;;
+            macosx)
+                build $d --disable-mac-universal
+                cp -av $d/include/pa_mac_core.h $dist/include
+                ;;
+        esac
     }
+
 
     #
     # WHAT TO BUILD
     #
     build_libsndfile
     build_portaudio
+
+
+    #
+    # MACOSX DYLIB LOAD REWRITE
+    # 
+    if [[ "$sys" = "macosx" ]]; then
+        venv="venv-macosx"
+
+        # Make fresh virtualenv for this
+        if [[ ! -d "$venv" ]]; then
+            log "Creating venv in '$venv'"
+            ( set -ex
+              $python -m venv "$venv"
+            ) || exit 1
+        fi
+        venv="$(rpath "$venv")"
+        python="$venv/bin/python"
+        pip="$venv/bin/pip"
+
+        log "Installing packages"
+        ( set -ex
+          # Use this technique to upgrade pip. Calling pip directly will fail on Windows
+          $python -m pip install --upgrade pip wheel
+          $pip install macholib
+        ) || exit 1
+
+        log "Rewriting libaray load paths"
+        ( set -ex; cd $dist/lib
+          $python $base/bin/macosx_dylib_loadpath.py $PWD *.so *.dylib
+        ) || exit 1
+    fi
+
 
     #
     # COLLECTING DIST
@@ -268,11 +377,15 @@ EOF
     ) || exit 1
 
     ( cd "dist"; set -ex
-      tar -cvJf $base/$archive.tar.xz \
-        include \
-        lib/lib*.so*
+      files=(include lib/lib*.so* lib/*.dylib)
+      tar -cvJf $base/$archive.tar.xz "${files[@]}"
     ) || exit 1
 
-    # --- LINUX BUILD DONE ---
+
+    # --- LINUX/MACOSX BUILD DONE ---
 
 fi
+
+log "Complete"
+cd ..
+rm -rf build
