@@ -28,18 +28,25 @@ esac
 # -- Setup
 bindir=bin
 winpty=
-python="${python:-python3}"
 case "$sys" in
     windows)
+        #winpty=winpty
         bindir=Scripts
-        winpty=winpty
         python="${python:-"py -3.7"}"
-        archive="elns-3rd-libraries-windows_win32"
+        bits="$($python -c'import platform;print(platform.architecture()[0])')"
+        case "$bits" in
+          32bit) arch='win32' ;;
+          64bit) arch='x64' ;;
+          *) echo "ERROR: Unknown architecture bits '$bits'"; exit 1 ;;
+        esac
+        archive="elns-3rd-libraries-windows_${arch}"
         ;;
     osx)
+        python="${python:-python3}"
         archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
         ;;
     linux)
+        python="${python:-python3}"
         archive="elns-3rd-libraries-linux_$(uname -m)"
         ;;
     *)

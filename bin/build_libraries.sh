@@ -28,17 +28,24 @@ esac
 
 # -- Setup
 winpty=
-python="${python:-python3}"
 case "$sys" in
     windows)
-        winpty=winpty
-        python="py -3.7"
-        archive="elns-3rd-libraries-windows_win32"
+        #winpty=winpty
+        python="${python:-"py -3.7"}"
+        bits="$($python -c'import platform;print(platform.architecture()[0])')"
+        case "$bits" in
+          32bit) arch='win32' ;;
+          64bit) arch='x64' ;;
+          *) echo "ERROR: Unknown architecture bits '$bits'"; exit 1 ;;
+        esac
+        archive="elns-3rd-libraries-windows_${arch}"
         ;;
     osx)
+        python="${python:-python3}"
         archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
         ;;
     linux)
+        python="${python:-python3}"
         archive="elns-3rd-libraries-linux_$(uname -m)"
         cat <<EOF
 Required packages for building these libraries:
@@ -167,7 +174,7 @@ if [[ "$sys" = "windows" ]]; then
             read
         else
             msbuild="${msb[0]}"
-            for platform in win32; do  # x64
+            for platform in "$arch"; do
                 for config in Release; do # Debug
                     ( set -ex
                       cd "portaudio/build/msvc";
@@ -185,7 +192,7 @@ if [[ "$sys" = "windows" ]]; then
             #cp -av portaudio/include/portaudio.h $d/portaudio.dll $d/portaudio_*.lib win32/
             #tar -C win32 -cvJf ../portaudio-v190600-win_win32.tar.xz .
             #rm -rf win32
-            if [[ ! "$x64" ]]; then
+            if [[ "$arch" = "win32" ]]; then
                 ( set -ex
                   mkdir -p $dist/include $dist/lib
                   cp -av portaudio/include/portaudio.h $dist/include/
@@ -203,11 +210,11 @@ if [[ "$sys" = "windows" ]]; then
             #cp -av portaudio/include/portaudio.h $d/portaudio.dll $d/portaudio_*.lib x64/
             #tar -C x64 -cvJf ../portaudio-v190600-win_x64.tar.xz .
             #rm -rf x64
-            if [[ "$x64" ]]; then
+            if [[ "$arch" = "x64" ]]; then
                 ( set -ex
                   mkdir -p $dist/include $dist/lib
                   cp -av portaudio/include/portaudio.h $dist/include/
-                  cp -av $d/portaudio.dll $d/portaudio_*.lib $dist/lib/
+                  cp -av $d/portaudio.dll $dist/lib/
                   cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
                 ) || exit 1
             fi
@@ -225,9 +232,15 @@ if [[ "$sys" = "windows" ]]; then
         #download https://ftp.osuosl.org/pub/xiph/releases/vorbis/libvorbis-1.3.5.tar.xz libvorbis-1.3.5
         #download https://ftp.osuosl.org/pub/xiph/releases/flac/flac-1.3.2.tar.xz flac-1.3.2
 
+        case "$arch" in
+            win32) vd=w32; fd=32bit ;;
+            x64) vd=w64; fd=64bit ;;
+            *) echo "Unknown arch '$arch'"; exit 1 ;;
+        esac
+
         # Get the official windows release
-        d=libsndfile-1.0.28-w32
-        download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-w32.zip $d
+        d=libsndfile-1.0.28-${vd}
+        download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-${vd}.zip $d
         mkdir -p $dist/include
         #cp -av $d/bin/*.dll $d/lib/*.lib $dist/lib
         cp -av $d/include/*.h $d/include/*.hh $dist/include/
@@ -244,11 +257,11 @@ if [[ "$sys" = "windows" ]]; then
             ) || exit 1
         fi
         mkdir -p $dist/lib
-        cp -av $d/libsndfile32bit.dll $dist/lib/
+        cp -av $d/libsndfile${fd}.dll $dist/lib/
 
         # Generate the libsndfile.lib from the dll:
         ( set -ex; cd $dist/lib
-          $winpty $python $base/bin/win_dll2lib.py libsndfile32bit.dll sndfile.lib
+          $winpty $python $base/bin/win_dll2lib.py --arch $arch libsndfile${fd}.dll sndfile.lib
         ) || exit 1
     }
 

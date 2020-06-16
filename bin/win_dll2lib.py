@@ -5,20 +5,20 @@ import sys
 import subprocess
 import tempfile
 import re
+import argparse
 
 # Bat script to convert DLL to a DEF file input
 dumpbin = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars32.bat"
+CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars{0}.bat"
 @ECHO on
 DUMPBIN /exports "%1" >"%2"
 '''
 
-
 # Bat script to convert parsed DEF to LIB
 libbat = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars32.bat"
+CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars{0}.bat"
 @ECHO on
-LIB /DEF:"%1" /OUT:"%2" /MACHINE:X86
+LIB /DEF:"%1" /OUT:"%2" /MACHINE:{1}
 '''
 
 # Rudimentary argument checking
@@ -26,11 +26,24 @@ print(sys.argv)
 if len(sys.argv) < 3:
     raise Exception("Too few arguments")
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--arch', default='x86', choices=['win32', 'x64'])
+parser.add_argument('infile', metavar="DLL")
+parser.add_argument('outfile', metavar="LIB")
+opts = parser.parse_args()
+
 # Get the file
-infile = sys.argv[1]
+infile = opts.infile
 deffile = infile.replace('.dll', '.def')
-outfile = sys.argv[2]
+outfile = opts.outfile
 expfile = outfile.replace('.lib', '.exp')
+
+if opts.arch == 'win32':
+    vcvars = '32'
+    arch = 'X86'
+elif opts.arch == 'x64':
+    vcvars = '64'
+    arch = 'X64'
 
 # Ensure the input exists
 if not os.path.exists(infile):
@@ -42,7 +55,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
     # Write the temp bat script for dumping the DLL file and run it
     bat = os.path.join(tmpdirname, 'run.bat')
     with open(bat, 'w') as f:
-        f.write(dumpbin)
+        f.write(dumpbin.format(vcvars))
     subprocess.check_call([bat, infile, deffile])
 
     # Parse the output from dumpbin and make it into a file with
@@ -78,7 +91,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
     # Write the temp bat script for generating the LIB file and run it
     bat = os.path.join(tmpdirname, 'run.bat')
     with open(bat, 'w') as f:
-        f.write(libbat)
+        f.write(libbat.format(vcvars, arch))
     subprocess.check_call([bat, deffile, outfile])
 
     # Remove the temporary def file
