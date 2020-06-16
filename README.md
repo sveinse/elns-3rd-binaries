@@ -8,15 +8,22 @@ application by providing pre-built binaries.
 There are two types of modules: The C libraries and the Python modules. To build
 any python modules that requires C compiling some additional tools are required:
 
- * Please consult https://wiki.python.org/moin/WindowsCompilers to see what
-   version of Windows compiler is needed.
+  * Please consult https://wiki.python.org/moin/WindowsCompilers to see what
+    version of Windows compiler is needed.
     - The current 3.6 and 3.7 Python needs Microsoft Build Tools for Visual
       Studio 2017 (VS 14.0),
       https://www.visualstudio.com/downloads/#build-tools-for-visual-studio-2017
     - Make sure the "VC++ 2015.3 v14.00 (v140) for desktop" is enabled
     - Perhaps "rc.exe" is missing when building with pip/python:
       https://stackoverflow.com/questions/14372706/visual-studio-cant-build-due-to-rc-exe
- - Some libraries, like portaudio, requires full Visual Studio to be built
+
+  * Some libraries, like portaudio, requires full Visual Studio to be built
+
+**2020-06 update**: On windows the `build_libaries.sh` compilation succeeded by
+                    only installing:
+
+  * **Visual Studio Community 2019**, option *"Desktop development with C++"*.
+    Includes `MSVC v142 - VS 2019 C++ x64/x86`, `Windows 10 SDK (10.0.18362.0)`
 
 
 ## Build C libraries
