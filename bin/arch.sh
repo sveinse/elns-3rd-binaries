@@ -1,3 +1,9 @@
+# Helper for the build scripts
+#
+# Copyright (C) 2020 Svein Seldal
+# This source code is licensed under the MIT license found in the LICENSE file
+# in the root directory for this source tree.
+#
 
 # -- Running system
 case "$(uname)" in
