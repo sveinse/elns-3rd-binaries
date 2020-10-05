@@ -240,6 +240,7 @@ elif [[ "$sys" = "macosx" ]]; then
     log "Rewriting library references"
     repair+=($pylib/pysndfile/*.so $pylib/_portaudio*.so)
     ( set -ex
+      $pip install macholib
       $python $base/bin/macosx_dylib_loadpath.py "$pylib" "${repair[@]}"
     ) || exit 1
 

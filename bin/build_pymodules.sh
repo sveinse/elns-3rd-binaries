@@ -85,8 +85,7 @@ build_pyaudio() {
     ) || exit 1
 
     ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps
-      cp -av *.whl "../../"
+      $winpty $pip wheel . --no-deps && cp -av *.whl "../../"
     ) || exit 1
 
 }
@@ -117,8 +116,7 @@ build_pysndfile() {
     #  fi ) || exit 1
 
     ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps --no-build-isolation
-      cp -av *.whl "../../"
+      $winpty $pip wheel . --no-deps --no-build-isolation && cp -av *.whl "../../"
     ) || exit 1
 
 }
@@ -139,8 +137,7 @@ build_twisted() {
     d=Twisted-*/
 
     ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps;
-      cp -av *.whl "../../"
+      $winpty $pip wheel . --no-deps && cp -av *.whl "../../"
     ) || exit 1
 
 }

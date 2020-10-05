@@ -275,7 +275,13 @@ else
     build_portaudio() {
         d=portaudio
         log "Building $d"
-        download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $d
+
+        #download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $d
+        ( set -ex
+          rm -rf $d
+          git clone git@github.com:sveinse/portaudio.git -b sveinse-master $d
+        ) || exit 1
+
         case "$sys" in
             linux)
                 build $d --without-asihpi --with-alsa --without-oss
