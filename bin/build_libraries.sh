@@ -152,7 +152,7 @@ if [[ "$sys" = "windows" ]]; then
             if [[ "$arch" = "win32" ]]; then
                 ( set -ex
                   mkdir -p $dist/include $dist/lib
-                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av portaudio/include/*.h $dist/include/
                   cp -av $d/portaudio.dll $dist/lib/
                   cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
                 ) || exit 1
@@ -170,7 +170,7 @@ if [[ "$sys" = "windows" ]]; then
             if [[ "$arch" = "x64" ]]; then
                 ( set -ex
                   mkdir -p $dist/include $dist/lib
-                  cp -av portaudio/include/portaudio.h $dist/include/
+                  cp -av portaudio/include/*.h $dist/include/
                   cp -av $d/portaudio.dll $dist/lib/
                   cp -av $d/portaudio_*.lib $dist/lib/portaudio.lib
                 ) || exit 1

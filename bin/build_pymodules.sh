@@ -80,7 +80,7 @@ build_pyaudio() {
     d=pyaudio
     log "Building $d"
     ( set -ex; if [[ ! -d "$d" ]]; then
-      git clone https://github.com/sveinse/pyaudio.git -b feature-channel-split $d
+      git clone https://github.com/sveinse/pyaudio.git -b sveinse-master $d
       fi 
     ) || exit 1
 
