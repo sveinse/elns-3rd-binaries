@@ -1,6 +1,6 @@
 # Helper for the build scripts
 #
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -9,7 +9,7 @@
 case "$(uname)" in
     *NT*)
         sys=windows
-        python="${python:-"py -3.7"}"
+        python="${python:-"py -3"}"
         bits="$($python -c'import platform;print(platform.architecture()[0])')"
         case "$bits" in
           32bit) arch='win32' ;;

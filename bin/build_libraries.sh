@@ -1,7 +1,7 @@
 #!/bin/bash
 # Library builder script
 #
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -14,7 +14,7 @@ base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 cd "$base"
 
 # Tool version
-TOOLVERSION='4'
+TOOLVERSION='5'
 
 # Directory to place output into
 dist=dist
@@ -24,41 +24,27 @@ dist=dist
 
 
 # -- Functions
-download() {
+unpack() {
+    name="$1"
+    dir="$2"
+    shift 2
 
-    url="$1"
-    name="${url##*/}"
-    shift
-
-    # Download
-    if [[ ! -e "$name" ]]; then
-        ( set -ex
-          curl -# -L "$url" -o "$name"
-        ) || exit 1
-    fi
-
-    # Unpack
-    if [[ $# -gt 0 ]]; then
-        dir="$1"
-        shift
-
-        if [[ ! -d "$dir" ]]; then
-            case "$name" in
-                *.tar|*.tgz|*.tar.xz|*.tar.gz)
-                    ( set -ex
-                      tar -xf "$name"
-                    ) || exit 1
-                    ;;
-                *.zip)
-                    ( set -ex
-                      unzip "$name" -d "$dir"
-                    ) || exit 1
-                    ;;
-                *)
-                    echo "ERROR: Don't know how to unpack '$name'"
-                    exit 1
-            esac
-        fi
+    if [[ ! -d "$dir" ]]; then
+        case "$name" in
+            *.tar|*.tgz|*.tar.xz|*.tar.gz)
+                ( set -ex
+                  tar -xf "$name"
+                ) || exit 1
+                ;;
+            *.zip)
+                ( set -ex
+                  unzip "$name" -d "$dir"
+                ) || exit 1
+                ;;
+            *)
+                echo "ERROR: Don't know how to unpack '$name'"
+                exit 1
+        esac
     fi
 
     # Patch the output
@@ -68,6 +54,24 @@ download() {
         ) || exit 1
         shift
     done
+}
+
+
+download() {
+
+    url="$1"
+    name="$2"
+    if [[ ! "$name" ]]; then
+        name="${url##*/}"
+    fi
+    #shift
+
+    # Download
+    if [[ ! -e "$name" ]]; then
+        ( set -ex
+          curl -# -L "$url" -o "$name"
+        ) || exit 1
+    fi
 }
 
 
@@ -110,14 +114,16 @@ if [[ "$sys" = "windows" ]]; then
         ) || exit 1
 
         #download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $port
-        download https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
+        #download https://www.steinberg.net/sdk_downloads/asiosdk2.3.zip asiosdk
+        download https://www.steinberg.net/asiosdk asiosdk.zip
+        unpack   asiosdk.zip asiosdk
 
         # ASIO support
         d=$port/src/hostapi/asio/ASIOSDK
         if [[ ! -d "$d" ]]; then
             ( set -ex
               mkdir -p "$d"
-              cp -av asiosdk/ASIOSDK2.3/common asiosdk/ASIOSDK2.3/host "$d"
+              cp -av asiosdk/*/common asiosdk/*/host "$d"
             ) || exit 1
         fi
 
@@ -197,7 +203,8 @@ if [[ "$sys" = "windows" ]]; then
 
         # Get the official windows release
         d=libsndfile-1.0.28-${vd}
-        download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-${vd}.zip $d
+        download http://www.mega-nerd.com/libsndfile/files/libsndfile-1.0.28-${vd}.zip
+        unpack   libsndfile-1.0.28-${vd}.zip $d
         mkdir -p $dist/include
         #cp -av $d/bin/*.dll $d/lib/*.lib $dist/lib
         cp -av $d/include/*.h $d/include/*.hh $dist/include/
@@ -249,22 +256,26 @@ else
     build_libsndfile() {
         d=libogg-1.3.4
         log "Building $d"
-        download http://downloads.xiph.org/releases/ogg/$d.tar.xz $d ../../patches/patch-libogg-and-stdint-h.diff
+        download http://downloads.xiph.org/releases/ogg/$d.tar.xz
+        unpack   $d.tar.xz $d ../../patches/patch-libogg-and-stdint-h.diff
         build    $d
 
         d=libvorbis-1.3.6
         log "Building $d"
-        download http://downloads.xiph.org/releases/vorbis/$d.tar.xz $d
+        download http://downloads.xiph.org/releases/vorbis/$d.tar.xz
+        unpack   $d.tar.xz $d
         build    $d
 
         d=flac-1.3.3
         log "Building $d"
-        download https://ftp.osuosl.org/pub/xiph/releases/flac/$d.tar.xz $d
+        download https://ftp.osuosl.org/pub/xiph/releases/flac/$d.tar.xz
+        unpack   $d.tar.xz $d
         build    $d
 
         d=libsndfile-1.0.28
         log "Building $d"
-        download http://www.mega-nerd.com/libsndfile/files/$d.tar.gz $d
+        download http://www.mega-nerd.com/libsndfile/files/$d.tar.gz
+        unpack   $d.tar.gz $d
         build    $d
     }
 
@@ -321,7 +332,7 @@ else
         log "Installing packages"
         ( set -ex
           # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-          $python -m pip install --upgrade pip wheel
+          $python -m pip install --upgrade pip wheel setuptools
           $pip install macholib
         ) || exit 1
 

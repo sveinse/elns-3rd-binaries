@@ -1,7 +1,7 @@
 #!/bin/bash
 # Python virtual environment installer
 #
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -12,7 +12,7 @@ rpath () {(cd "$1" && pwd)}
 base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 
 # Tool version
-TOOLVERSION='4'
+TOOLVERSION='5'
 
 # -- Load architecture info
 . "$base/bin/arch.sh"
@@ -131,7 +131,7 @@ if [[ "$upgrade" ]]; then
     log "Upgrading pip and wheel"
     ( set -ex
       # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-      $winpty $python -m pip install --upgrade pip wheel
+      $winpty $python -m pip install --upgrade pip wheel setuptools
     ) || exit 1
 fi
 

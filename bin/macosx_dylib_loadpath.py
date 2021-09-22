@@ -1,5 +1,5 @@
 """ A tool to rewrite Mac OSX load path to loader_path """
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # Distributed under GPLv2.
 #
 # This tool is heavily based on code from

@@ -1,5 +1,5 @@
 """ A crude tool to generate a .lib from a .dll file """
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -10,19 +10,24 @@ import subprocess
 import tempfile
 import re
 import argparse
+import glob
+
+# Paths
+basedir=r'C:\Program Files (x86)\Microsoft Visual Studio'
+vcvars_glob=r'*\*\VC\Auxiliary\Build'
 
 # Bat script to convert DLL to a DEF file input
 dumpbin = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars{0}.bat"
+CALL "{path}"
 @ECHO on
 DUMPBIN /exports "%1" >"%2"
 '''
 
 # Bat script to convert parsed DEF to LIB
 libbat = r'''
-CALL "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars{0}.bat"
+CALL "{path}"
 @ECHO on
-LIB /DEF:"%1" /OUT:"%2" /MACHINE:{1}
+LIB /DEF:"%1" /OUT:"%2" /MACHINE:{arch}
 '''
 
 # Rudimentary argument checking
@@ -42,16 +47,28 @@ deffile = infile.replace('.dll', '.def')
 outfile = opts.outfile
 expfile = outfile.replace('.lib', '.exp')
 
-if opts.arch == 'win32':
-    vcvars = '32'
-    arch = 'X86'
-elif opts.arch == 'x64':
-    vcvars = '64'
-    arch = 'X64'
-
 # Ensure the input exists
 if not os.path.exists(infile):
     raise FileNotFoundError(infile)
+
+# Get the architecture parameters
+if opts.arch == 'win32':
+    vcvars = 'vcvars32.bat'
+    arch = 'X86'
+elif opts.arch == 'x64':
+    vcvars = 'vcvars64.bat'
+    arch = 'X64'
+else:
+    raise Exception(f"Unknown architecture '{opts.arch}'")
+
+# Find Visual C++
+if not os.path.exists(basedir):
+    raise FileNotFoundError(f"Could not find '{basedir}'. Is Visual Studio installed?")
+candidates = glob.glob(os.path.join(basedir, vcvars_glob, vcvars))
+if not candidates:
+    raise FileNotFoundError(f"Could not find '{basedir}\\{vcvars_glob}\\{vcvars}'")
+vcvars_path = candidates[0]
+print(f"Found '{vcvars_path}'")
 
 # Create a temp working directory
 with tempfile.TemporaryDirectory() as tmpdirname:
@@ -59,7 +76,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
     # Write the temp bat script for dumping the DLL file and run it
     bat = os.path.join(tmpdirname, 'run.bat')
     with open(bat, 'w') as f:
-        f.write(dumpbin.format(vcvars))
+        f.write(dumpbin.format(path=vcvars_path))
     subprocess.check_call([bat, infile, deffile])
 
     # Parse the output from dumpbin and make it into a file with
@@ -95,7 +112,7 @@ with tempfile.TemporaryDirectory() as tmpdirname:
     # Write the temp bat script for generating the LIB file and run it
     bat = os.path.join(tmpdirname, 'run.bat')
     with open(bat, 'w') as f:
-        f.write(libbat.format(vcvars, arch))
+        f.write(libbat.format(path=vcvars_path, arch=arch))
     subprocess.check_call([bat, deffile, outfile])
 
     # Remove the temporary def file

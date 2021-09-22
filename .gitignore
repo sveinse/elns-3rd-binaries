@@ -1,4 +1,5 @@
 build/
+dist/
 elns-3rd-libraries-*-complete.tar.xz
 elns-*.whl
 .DS_Store

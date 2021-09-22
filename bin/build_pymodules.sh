@@ -1,7 +1,7 @@
 #!/bin/bash
 # Python module builder
 #
-# Copyright (C) 2020 Svein Seldal
+# Copyright (C) 2020-2021 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -14,7 +14,7 @@ base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 cd "$base"
 
 # Tool version
-TOOLVERSION='4'
+TOOLVERSION='5'
 
 # -- Load architecture info
 . "$base/bin/arch.sh"
@@ -40,7 +40,7 @@ pip="$venv/$bindir/pip"
 log "Installing packages"
 ( set -ex
   # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-  $winpty $python -m pip install --upgrade pip wheel
+  $winpty $python -m pip install --upgrade pip wheel setuptools
 ) || exit 1
 
 
