@@ -1,5 +1,5 @@
 """ A crude tool to generate a .lib from a .dll file """
-# Copyright (C) 2020-2021 Svein Seldal
+# Copyright (C) 2020-2022 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -13,8 +13,7 @@ import argparse
 import glob
 
 # Paths
-basedir=r'C:\Program Files (x86)\Microsoft Visual Studio'
-vcvars_glob=r'*\*\VC\Auxiliary\Build'
+vcvars_glob=r'C:/Program Files*/Microsoft Visual Studio/*/*/VC/Auxiliary/Build/'
 
 # Bat script to convert DLL to a DEF file input
 dumpbin = r'''
@@ -62,11 +61,9 @@ else:
     raise Exception(f"Unknown architecture '{opts.arch}'")
 
 # Find Visual C++
-if not os.path.exists(basedir):
-    raise FileNotFoundError(f"Could not find '{basedir}'. Is Visual Studio installed?")
-candidates = glob.glob(os.path.join(basedir, vcvars_glob, vcvars))
+candidates = glob.glob(vcvars_glob + vcvars)
 if not candidates:
-    raise FileNotFoundError(f"Could not find '{basedir}\\{vcvars_glob}\\{vcvars}'")
+    raise FileNotFoundError(f"Could not find '{vcvars_glob + vcvars}'. Is Visual Studio installed?")
 vcvars_path = candidates[0]
 print(f"Found '{vcvars_path}'")
 

@@ -1,17 +1,11 @@
 #!/bin/bash
 # Library builder script
 #
-# Copyright (C) 2020-2021 Svein Seldal
+# Copyright (C) 2020-2022 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
 shopt -s nullglob
-
-rpath () {(cd "$1" && pwd)}
-
-# path to project dir
-base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
-cd "$base"
 
 # Tool version
 TOOLVERSION='5'
@@ -19,7 +13,14 @@ TOOLVERSION='5'
 # Directory to place output into
 dist=dist
 
-# -- Load architecture info
+
+# Path to project dir
+rpath () {(cd "$1" && pwd)}
+base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
+cd "$base"
+
+
+# Load architecture info
 . "$base/bin/arch.sh"
 
 
@@ -128,7 +129,7 @@ if [[ "$sys" = "windows" ]]; then
         fi
 
         # Find MSBuild.exe candidates
-        msb=(/c/"Program Files (x86)"/"Microsoft Visual Studio"/*/*/MSBuild/*/Bin/MSBuild.exe)
+        msb=(/c/"Program Files"*/"Microsoft Visual Studio"/*/*/MSBuild/*/Bin/MSBuild.exe)
         if [[ ${#msb[@]} -eq 0 ]]; then
             echo "ERROR  Unable to find any installed MSBuild.exe for automatic build."
             echo "*****  PORTAUDIO CAN NOW BE OPENED AND BUILT IN VISUAL STUDIO"

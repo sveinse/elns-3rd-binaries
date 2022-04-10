@@ -1,31 +1,34 @@
 #!/bin/bash
 # Python module builder
 #
-# Copyright (C) 2020-2021 Svein Seldal
+# Copyright (C) 2020-2022 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
 shopt -s nullglob
 
-rpath () {(cd "$1" && pwd)}
-
-# path to project dir
-base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
-cd "$base"
-
 # Tool version
 TOOLVERSION='5'
 
-# -- Load architecture info
+venv="venv"
+
+
+# Path to project dir
+rpath () {(cd "$1" && pwd)}
+base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
+cd "$base"
+
+
+# Load architecture info
 . "$base/bin/arch.sh"
+
 
 # Go to build dir
 mkdir -p build
 cd build
 
-# Make fresh virtualenv for this
-venv="venv"
 
+# Make fresh virtualenv for this
 if [[ ! -d "$venv" ]]; then
     log "Creating venv in '$venv'"
     ( set -ex

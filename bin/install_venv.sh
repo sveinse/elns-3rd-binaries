@@ -1,28 +1,29 @@
 #!/bin/bash
 # Python virtual environment installer
 #
-# Copyright (C) 2020-2021 Svein Seldal
+# Copyright (C) 2020-2022 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
 
-rpath () {(cd "$1" && pwd)}
-
-# path to project dir
-base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
-
 # Tool version
 TOOLVERSION='5'
 
+# -- Path to project dir
+rpath () {(cd "$1" && pwd)}
+base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
+
+
 # -- Load architecture info
 . "$base/bin/arch.sh"
+
 
 # -- Help
 usage () {
     ME="$(basename "${BASH_SOURCE[0]}")"
     cat <<EOF
 $ME -- Virtual environment installer v${TOOLVERSION}
-(C) 2020 Svein Seldal <sveinse@seldal.com>
+(C) 2020-2022 Svein Seldal <sveinse@seldal.com>
 
   Install a virtual environment and inject external C libraries
   into it using packages from prebuild binary files.
