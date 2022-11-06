@@ -79,16 +79,27 @@ dist="$(rpath "$venv/dist")"
 #--- PYAUDIO ---
 build_pyaudio() {
 
+    case "$arch" in
+        win32) vd=x86 ;;
+        x64) vd=x64 ;;
+        *) echo "Unknown arch '$arch'"; exit 1 ;;
+    esac
+
     # Get our modified version
     d=pyaudio
+    branch=v0.2.12-sveinse
+
     log "Building $d"
     ( set -ex; if [[ ! -d "$d" ]]; then
-      git clone https://github.com/sveinse/pyaudio.git -b sveinse-master $d
+      #git clone $base/../__upstream/pyaudio -b $branch $d
+      git clone https://github.com/sveinse/pyaudio.git -b $branch $d
       fi 
     ) || exit 1
 
     ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps && cp -av *.whl "../../"
+      $winpty $python setup.py build_ext -l portaudio
+      $winpty $python setup.py bdist_wheel
+      cp -av dist/*.whl "../../"
     ) || exit 1
 
 }
@@ -119,28 +130,9 @@ build_pysndfile() {
     #  fi ) || exit 1
 
     ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps --no-build-isolation && cp -av *.whl "../../"
-    ) || exit 1
-
-}
-
-
-#--- TWISTED ---
-build_twisted() {
-
-    log "Building twisted"
-
-    # Download the official version
-    ( set -ex
-      $winpty $pip download --no-deps --no-binary=:all: twisted
-    ) || exit 1
-    ( set -ex
-      tar -xf Twisted-*.tar.bz2
-    ) || exit 1
-    d=Twisted-*/
-
-    ( cd $d; set -ex
-      $winpty $pip wheel . --no-deps && cp -av *.whl "../../"
+      $winpty $python setup.py build_ext
+      $winpty $python setup.py bdist_wheel
+      cp -av dist/*.whl "../../"
     ) || exit 1
 
 }
@@ -151,9 +143,8 @@ build_twisted() {
 #
 build_pyaudio
 build_pysndfile
-#build_twisted  # Twisted doesn't require compiler any more, cached build from pypi is ok
 
 
 log "Complete"
 cd ..
-rm -rf build
+rm -rf build dist

@@ -186,7 +186,7 @@ if [[ "$sys" = "windows" ]]; then
     for f in "${files[@]}"; do
         fn="${f##*/}"
         case "$fn" in
-            libsndfile*.dll)
+            libsndfile*.dll|sndfile*.dll)
                 dp="$pylib/pysndfile/"
                 ;;
             *)
