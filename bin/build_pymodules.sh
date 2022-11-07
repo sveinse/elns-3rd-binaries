@@ -138,11 +138,24 @@ build_pysndfile() {
 }
 
 
+#--- TWISTED ---
+build_twistediopc() {
+
+    log "Building twisted-iopcsupport"
+
+    ( set -ex
+      $winpty $pip wheel twisted-iocpsupport
+      cp -av twisted_iocpsupport*.whl ..
+    ) || exit 1
+}
+
+
 #
 # WHAT TO BUILD
 #
 build_pyaudio
 build_pysndfile
+build_twistediopc
 
 
 log "Complete"
