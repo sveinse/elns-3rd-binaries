@@ -1,21 +1,22 @@
 #!/bin/bash
 # Python virtual environment installer
 #
-# Copyright (C) 2020-2022 Svein Seldal
+# Copyright (C) 2020-2024 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
 
 # Tool version
-TOOLVERSION='5'
+TOOLVERSION='6'
 
 # -- Path to project dir
 rpath () {(cd "$1" && pwd)}
 base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 
 
-# -- Load architecture info
+# -- Load architecture info and functions
 . "$base/bin/arch.sh"
+. "$base/bin/functions.sh"
 
 
 # -- Help
@@ -23,7 +24,7 @@ usage () {
     ME="$(basename "${BASH_SOURCE[0]}")"
     cat <<EOF
 $ME -- Virtual environment installer v${TOOLVERSION}
-(C) 2020-2022 Svein Seldal <sveinse@seldal.com>
+(C) 2020-2024 Svein Seldal <sveinse@seldal.com>
 
   Install a virtual environment and inject external C libraries
   into it using packages from prebuild binary files.
@@ -122,17 +123,17 @@ if [[ ! -d "$venv" ]]; then
     ( set -ex
       $winpty $python -m venv "$venv"
     ) || exit 1
+    upgrade=1
 fi
-python="$venv/$bindir/python"
-pip="$venv/$bindir/pip"
+python="$winpty $venv/$bindir/python"
+pip="$python -m pip"
 
 
 # -- Upgrade pip and wheel
 if [[ "$upgrade" ]]; then
     log "Upgrading pip and wheel"
     ( set -ex
-      # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-      $winpty $python -m pip install --upgrade pip wheel setuptools
+      $pip install --upgrade pip setuptools
     ) || exit 1
 fi
 
@@ -143,9 +144,8 @@ fi
 
 # -- Run pip
 log "Running 'pip install ${args[@]}'"
-mkdir -p "$base/dist/"
 ( set -ex
-  $winpty $pip install --find-links=$base/ "${args[@]}" "${extrapkg[@]}"
+  $pip install --find-links=$base/ "${args[@]}"
 ) || exit 1
 
 
@@ -157,25 +157,23 @@ mkdir -p "$pylib"
 
 # -- Do not install the binary libraries
 [[ "$nolibs" ]] && exit 0
+[[ ${#archives[@]} -eq 0 ]] && exit 0
 
 
 # -- Install the binaries
-if [[ "$archive" ]]; then
-    log "Unpacking binary '$archive.tar.xz'"
+log "Unpacking binary ${archives[@]}"
 
-    # Setup tempdir for our binaries
-    archtmp="$(mktemp -d)"
-    deltmp() {
-        rm -rf "$archtmp"
-    }
-    trap deltmp 0
+# Setup tempdir for our binaries which is deleted on exit
+archtmp="$(mktemp -d)"
+deltmp() {
+    rm -rf "$archtmp"
+}
+trap deltmp 0
 
-    # Unpack the binaries
-    ( set -ex
-      tar -C "$archtmp" -xf "$base/$archive.tar.xz"
-    ) || exit 1
-fi
-
+# Unpack the binaries
+for archive in "${archives[@]}"; do
+    unpack_lib "$archtmp" "$archive"
+done
 
 if [[ "$sys" = "windows" ]]; then
 
@@ -188,6 +186,9 @@ if [[ "$sys" = "windows" ]]; then
         case "$fn" in
             libsndfile*.dll|sndfile*.dll)
                 dp="$pylib/pysndfile/"
+                ;;
+            portaudio*.dll)
+                dp="$pylib/pyaudio/"
                 ;;
             *)
                 dp="$pylib"
@@ -214,7 +215,7 @@ elif [[ "$sys" = "linux" ]]; then
 
     # Set rpath on the wheels as well
     log "Setting rpath on installed wheels"
-    rpath+=($pylib/pysndfile/*.so $pylib/_portaudio*.so)
+    rpath+=($pylib/pysndfile/*.so $pylib/pyaudio/*.so)
     for f in "${rpath[@]}"; do
         [[ -f "$f" ]] && (
             set -ex

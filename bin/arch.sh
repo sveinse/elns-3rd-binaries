@@ -1,6 +1,6 @@
 # Architecture helper for the build scripts
 #
-# Copyright (C) 2020-2022 Svein Seldal
+# Copyright (C) 2020-2024 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
@@ -9,7 +9,7 @@
 case "$(uname)" in
     *NT*)
         sys=windows
-        python="${python:-"py -3"}"
+        python="${python:-"py"}"
         bits="$($python -c'import platform;print(platform.architecture()[0])')"
         case "$bits" in
           32bit) arch='win32' ;;
@@ -38,13 +38,16 @@ case "$sys" in
     windows)
         #winpty=winpty
         bindir=Scripts
-        archive="elns-3rd-libraries-windows_${arch}"
+        suffix="windows_${arch}"
+        archives=(portaudio libsndfile)
         ;;
     macosx)
-        archive="elns-3rd-libraries-macosx_${macrel}_$(uname -m)"
+        suffix="macosx_${macrel}_$(uname -m)"
+        archives=(portaudio libsndfile)
         ;;
     linux)
-        archive="elns-3rd-libraries-linux_$(uname -m)"
+        suffix="linux_$(uname -m)"
+        archives=(portaudio libsndfile)
         ;;
     *)
         echo "ERROR: Don't know what to build for '$(uname)'"

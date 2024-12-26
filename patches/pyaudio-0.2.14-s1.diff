@@ -1,0 +1,685 @@
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/CHANGELOG PyAudio-0.2.14/CHANGELOG
+--- PyAudio-0.2.14.orig/CHANGELOG	2023-11-04 19:08:10.000000000 +0100
++++ PyAudio-0.2.14/CHANGELOG	2024-12-26 21:21:34.038212100 +0100
+@@ -1,3 +1,23 @@
++2024-12-26  Svein Seldal  <sveinse@seldal.com>
++
++  PyAudio 0.2.14+s1
++
++  * Support different input channels from output channels. Replace
++    pyaudio.PyAudio.Stream() argument `channels` with `input_channels`
++    and `output_channels`. Same in C PyAudio_OpenStream(). All locations
++    throughout pyaudio now keeps track of separate input and output count/sizes.
++
++  * Add `input_host_api_specific_stream_info` and
++    `output_host_api_specific_stream_info` arguments to
++    pyaudio.PyAudio.is_format_supported() and PyAudio_IsFormatSupported()
++
++  * Add new pyaudio.PyAudio.PaWasapiStreamInfo for Windows WASAPI users,
++    including the WASAPI-specific flags. Implement wasapi_stream_info.c/.h
++    which implements PyAudioWasapiStreamInfoType. Add support for using this
++    with PyAudio_OpenStream()
++
++  * Minor fix for building on Windows
++
+ 2023-11-04  Hubert Pham  <hubert@mit.edu>
+ 
+   PyAudio 0.2.14
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/PKG-INFO PyAudio-0.2.14/PKG-INFO
+--- PyAudio-0.2.14.orig/PKG-INFO	2023-11-05 22:34:37.550145600 +0100
++++ PyAudio-0.2.14/PKG-INFO	2024-12-26 13:33:42.382928400 +0100
+@@ -1,6 +1,6 @@
+ Metadata-Version: 2.1
+ Name: PyAudio
+-Version: 0.2.14
++Version: 0.2.14+s1
+ Summary: Cross-platform audio I/O with PortAudio
+ Home-page: https://people.csail.mit.edu/hubert/pyaudio/
+ Author: Hubert Pham
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/setup.py PyAudio-0.2.14/setup.py
+--- PyAudio-0.2.14.orig/setup.py	2024-12-25 00:51:44.080307200 +0100
++++ PyAudio-0.2.14/setup.py	2024-12-26 13:33:47.348564200 +0100
+@@ -32,7 +32,7 @@
+ from setuptools import setup, Extension
+ import sys
+ 
+-__version__ = "0.2.14"
++__version__ = "0.2.14+s1"
+ 
+ # setup.py/setuptools will try to locate and link dynamically against portaudio,
+ # except on Windows. On Windows, setup.py will attempt to statically link in
+@@ -54,6 +54,7 @@
+         'src/pyaudio/host_api.c',
+         'src/pyaudio/init.c',
+         'src/pyaudio/mac_core_stream_info.c',
++        'src/pyaudio/wasapi_stream_info.c',
+         'src/pyaudio/misc.c',
+         'src/pyaudio/stream.c',
+         'src/pyaudio/stream_io.c',
+@@ -87,9 +88,7 @@
+     elif sys.platform == 'win32':
+         # Only supports statically linking with portaudio, since the typical
+         # way users install PyAudio on win32 is through pre-compiled wheels.
+-        bits = platform.architecture()[0]
+-        if '64' in bits:
+-            defines.append(('MS_WIN64', '1'))
++        defines += [('WINDOWS', '1')]
+ 
+         if WIN_VCPKG_PATH:
+             include_dirs += [os.path.join(WIN_VCPKG_PATH, 'include')]
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/__init__.py PyAudio-0.2.14/src/pyaudio/__init__.py
+--- PyAudio-0.2.14.orig/src/pyaudio/__init__.py	2023-11-04 19:09:01.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/__init__.py	2024-12-26 20:37:52.410365100 +0100
+@@ -1,6 +1,7 @@
+ # PyAudio : Python Bindings for PortAudio.
+ #
+ # Copyright (c) 2006 Hubert Pham
++# Copyright (c) 2020-2024 Svein Seldal
+ #
+ # Permission is hereby granted, free of charge, to any person obtaining
+ # a copy of this software and associated documentation files (the
+@@ -101,7 +102,7 @@
+ """
+ 
+ __author__ = "Hubert Pham"
+-__version__ = "0.2.14"
++__version__ = "0.2.14+s1"
+ __docformat__ = "restructuredtext en"
+ 
+ import locale
+@@ -297,7 +298,8 @@
+         def __init__(self,
+                      PA_manager,
+                      rate,
+-                     channels,
++                     input_channels,
++                     output_channels,
+                      format,
+                      input=False,
+                      output=False,
+@@ -317,7 +319,8 @@
+             :param PA_manager: A reference to the managing :py:class:`PyAudio`
+                 instance
+             :param rate: Sampling rate
+-            :param channels: Number of channels
++            :param input_channels: Number of input channels            
++            :param output_channels: Number of output channels
+             :param format: Sampling size and format. See |PaSampleFormat|.
+             :param input: Specifies whether this is an input stream.
+                 Defaults to ``False``.
+@@ -409,13 +412,15 @@
+             self._is_output = output
+             self._is_running = start
+             self._rate = rate
+-            self._channels = channels
++            self._input_channels = input_channels
++            self._output_channels = output_channels
+             self._format = format
+             self._frames_per_buffer = frames_per_buffer
+ 
+             arguments = {
+                 'rate': rate,
+-                'channels': channels,
++                'input_channels': input_channels,
++                'output_channels': output_channels,
+                 'format': format,
+                 'input': input,
+                 'output': output,
+@@ -545,7 +550,7 @@
+             if num_frames is None:
+                 # Determine how many frames to read:
+                 width = get_sample_size(self._format)
+-                num_frames = int(len(frames) / (self._channels * width))
++                num_frames = int(len(frames) / (self._output_channels * width))
+ 
+             pa.write_stream(self._stream, frames, num_frames,
+                             exception_on_underflow)
+@@ -751,9 +756,11 @@
+                             input_device=None,
+                             input_channels=None,
+                             input_format=None,
++                            input_host_api_specific_stream_info=None,
+                             output_device=None,
+                             output_channels=None,
+-                            output_format=None):
++                            output_format=None,
++                            output_host_api_specific_stream_info=None):
+         """Checks if specified device configuration is supported.
+ 
+         Returns True if the configuration is supported; raises ValueError
+@@ -770,6 +777,8 @@
+         :param input_format:
+            PortAudio sample format constant defined
+            in this module
++        :param input_host_api_specific_stream_info:
++           Host specific input device settings or properties
+         :param output_device:
+            The output device index. Specify ``None`` (default) for
+            half-duplex input-only streams.
+@@ -778,6 +787,8 @@
+            `input_device` is not specified (or ``None``).
+         :param output_format:
+            |PaSampleFormat| constant.
++        :param output_host_api_specific_stream_info:
++           Host specific output device settings or properties
+ 
+         :rtype: bool
+         :raises ValueError: tuple containing (error string, |PaErrorCode|).
+@@ -792,11 +803,15 @@
+             kwargs['input_device'] = input_device
+             kwargs['input_channels'] = input_channels
+             kwargs['input_format'] = input_format
++            if input_host_api_specific_stream_info is not None:
++                kwargs['input_host_api_specific_stream_info'] = input_host_api_specific_stream_info
+ 
+         if output_device is not None:
+             kwargs['output_device'] = output_device
+             kwargs['output_channels'] = output_channels
+             kwargs['output_format'] = output_format
++            if output_host_api_specific_stream_info is not None:
++                kwargs['output_host_api_specific_stream_info'] = output_host_api_specific_stream_info
+ 
+         return pa.is_format_supported(rate, **kwargs)
+ 
+@@ -988,6 +1003,62 @@
+             return self
+ 
+ 
++if hasattr(pa, 'paWasapiStreamInfo'):
++    class PaWasapiStreamInfo(pa.paWasapiStreamInfo):
++        """PortAudio Host API Specific Stream Info for Windows Audio Session API.
++
++        To configure Windows-specific settings, instantiate this class and pass
++        it as the argument in :py:func:`PyAudio.open` to parameters
++        ``input_host_api_specific_stream_info`` or
++        ``output_host_api_specific_stream_info``.  (See
++        :py:func:`PyAudio.Stream.__init__`.)
++
++        :note: Windows only.
++
++        .. |PaWinWasapiFlags| replace:: :ref:`PortAudio Win WASAPI Flags <PaWinWasapiFlags>`
++        .. _PaWinWasapiFlags:
++
++        **PortAudio Windows WASAPI Flags**
++          :py:data:`paWinWasapiExclusive`,
++          :py:data:`paWinWasapiRedirectHostProcessor`,
++          :py:data:`paWinWasapiUseChannelMask`,
++          :py:data:`paWinWasapiPolling`,
++          :py:data:`paWinWasapiThreadPriority`,
++          :py:data:`paWinWasapiExplicitSampleFormat`,
++          :py:data:`paWinWasapiAutoConvert`,
++          :py:data:`paWinWasapiPassthrough`
++
++        .. attribute:: flags
++
++           The flags specified to the constructor.
++
++           :type: |PaWinWasapiFlags|
++        """
++
++        paWinWasapiExclusive = pa.paWinWasapiExclusive
++        paWinWasapiRedirectHostProcessor = pa.paWinWasapiRedirectHostProcessor
++        paWinWasapiUseChannelMask = pa.paWinWasapiUseChannelMask
++        paWinWasapiPolling = pa.paWinWasapiPolling
++        paWinWasapiThreadPriority = pa.paWinWasapiThreadPriority
++        paWinWasapiExplicitSampleFormat = pa.paWinWasapiExplicitSampleFormat
++        paWinWasapiAutoConvert = pa.paWinWasapiAutoConvert
++        paWinWasapiPassthrough = pa.paWinWasapiPassthrough
++
++        def __init__(self, flags=None):
++            """
++            Initialize with flags. See PortAudio
++            documentation for more details on these parameters; they are
++            passed almost verbatim to the PortAudio library.
++
++            :param flags: |PaWasapiFlags| OR'ed together.
++                See :py:class:`PaWasapiStreamInfo`.
++            """
++            kwargs = {}
++            if flags is not None:
++                kwargs["flags"] = flags
++            super().__init__(**kwargs)
++
++
+ # The top-level Stream class is reserved for future API changes. Users should
+ # never instantiate Stream directly. Instead, users must use PyAudio.open()
+ # instead, as documented.
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/main.c PyAudio-0.2.14/src/pyaudio/main.c
+--- PyAudio-0.2.14.orig/src/pyaudio/main.c	2022-12-26 05:04:07.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/main.c	2024-12-26 20:42:40.373368300 +0100
+@@ -34,6 +34,7 @@
+ #include "host_api.h"
+ #include "init.h"
+ #include "mac_core_stream_info.h"
++#include "wasapi_stream_info.h"
+ #include "misc.h"
+ #include "stream.h"
+ #include "stream_io.h"
+@@ -183,6 +184,12 @@
+   }
+ #endif
+ 
++#ifdef WINDOWS
++  if (PyType_Ready(&PyAudioWasapiStreamInfoType) < 0) {
++    return ERROR_INIT;
++  }
++#endif
++
+ #if PY_MAJOR_VERSION >= 3
+   m = PyModule_Create(&moduledef);
+ #else
+@@ -197,6 +204,11 @@
+   PyModule_AddObject(m, "paMacCoreStreamInfo",
+                      (PyObject *)&PyAudioMacCoreStreamInfoType);
+ #endif
++#ifdef WINDOWS
++  Py_INCREF(&PyAudioWasapiStreamInfoType);
++  PyModule_AddObject(m, "paWasapiStreamInfo",
++                     (PyObject *)&PyAudioWasapiStreamInfoType);
++#endif
+ 
+   // Add PortAudio constants
+ 
+@@ -303,6 +315,21 @@
+   PyModule_AddIntConstant(m, "paMacCoreMinimizeCPU", paMacCoreMinimizeCPU);
+ #endif
+ 
++#ifdef WINDOWS
++  PyModule_AddIntConstant(m, "paWinWasapiExclusive", paWinWasapiExclusive);
++  PyModule_AddIntConstant(m, "paWinWasapiRedirectHostProcessor",
++                          paWinWasapiRedirectHostProcessor);
++  PyModule_AddIntConstant(m, "paWinWasapiUseChannelMask",
++                          paWinWasapiUseChannelMask);
++  PyModule_AddIntConstant(m, "paWinWasapiPolling", paWinWasapiPolling);
++  PyModule_AddIntConstant(m, "paWinWasapiThreadPriority",
++                          paWinWasapiThreadPriority);
++  PyModule_AddIntConstant(m, "paWinWasapiExplicitSampleFormat",
++                          paWinWasapiExplicitSampleFormat);
++  PyModule_AddIntConstant(m, "paWinWasapiAutoConvert", paWinWasapiAutoConvert);
++  PyModule_AddIntConstant(m, "paWinWasapiPassthrough", paWinWasapiPassthrough);
++#endif
++
+ #if PY_MAJOR_VERSION >= 3
+   return m;
+ #endif
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/misc.c PyAudio-0.2.14/src/pyaudio/misc.c
+--- PyAudio-0.2.14.orig/src/pyaudio/misc.c	2022-12-26 05:04:07.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/misc.c	2024-12-26 02:37:07.423728400 +0100
+@@ -6,6 +6,9 @@
+ #include "Python.h"
+ #include "portaudio.h"
+ 
++#include "mac_core_stream_info.h"
++#include "wasapi_stream_info.h"
++
+ PyObject *PyAudio_GetPortAudioVersion(PyObject *self, PyObject *args) {
+   if (!PyArg_ParseTuple(args, "")) {
+     return NULL;
+@@ -50,9 +53,11 @@
+     "input_device",
+     "input_channels",
+     "input_format",
++    "input_host_api_specific_stream_info",
+     "output_device",
+     "output_channels",
+     "output_format",
++    "output_host_api_specific_stream_info",
+     NULL
+   };
+   // clang-format on
+@@ -65,19 +70,49 @@
+   PaSampleFormat input_format, output_format;
+   PaError error;
+ 
++#if defined(MACOS)
++  PyAudioMacCoreStreamInfo *input_host_specific_stream_info = NULL;
++  PyAudioMacCoreStreamInfo *output_host_specific_stream_info = NULL;
++#elif defined(WINDOWS)
++  PyAudioWasapiStreamInfo *input_host_specific_stream_info = NULL;
++  PyAudioWasapiStreamInfo *output_host_specific_stream_info = NULL;
++#else
++  /* mostly ignored...*/
++  PyObject *input_host_specific_stream_info = NULL;
++  PyObject *output_host_specific_stream_info = NULL;
++#endif
++
+   input_device = input_channels = output_device = output_channels = -1;
+ 
+   input_format = output_format = -1;
+ 
+   // clang-format off
+-  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "f|iikiik", kwlist,
++  if (!PyArg_ParseTupleAndKeywords(args, kwargs,
++#if defined(MACOSX) || defined(WINDOWS)
++                                   "f|iikO!iikO!",
++#else
++                                   "f|iikOiikO",
++#endif
++                                   kwlist,
+                                    &sample_rate,
+                                    &input_device,
+                                    &input_channels,
+                                    &input_format,
++#if defined(MACOS)
++                                   &PyAudioMacCoreStreamInfoType,
++#elif defined(WINDOWS)
++                                   &PyAudioWasapiStreamInfoType,
++#endif
++                                   &input_host_specific_stream_info,
+                                    &output_device,
+                                    &output_channels,
+-                                   &output_format)) {
++                                   &output_format,
++#if defined(MACOS)
++                                   &PyAudioMacCoreStreamInfoType,
++#elif defined(WINDOWS)
++                                   &PyAudioWasapiStreamInfoType,
++#endif
++                                   &output_host_specific_stream_info)) {
+     return NULL;
+   }
+   // clang-format on
+@@ -88,6 +123,12 @@
+     inputParams.sampleFormat = input_format;
+     inputParams.suggestedLatency = 0;
+     inputParams.hostApiSpecificStreamInfo = NULL;
++#if defined(MACOS) || defined(WINDOWS)
++    if (input_host_specific_stream_info) {
++      inputParams.hostApiSpecificStreamInfo =
++        &input_host_specific_stream_info->stream_info;
++    }
++#endif
+   }
+ 
+   if (!(output_device < 0)) {
+@@ -96,6 +137,12 @@
+     outputParams.sampleFormat = output_format;
+     outputParams.suggestedLatency = 0;
+     outputParams.hostApiSpecificStreamInfo = NULL;
++#if defined(MACOS) || defined(WINDOWS)
++    if (output_host_specific_stream_info) {
++      outputParams.hostApiSpecificStreamInfo =
++          &output_host_specific_stream_info->stream_info;
++    }
++#endif
+   }
+ 
+   error = Pa_IsFormatSupported((input_device < 0) ? NULL : &inputParams,
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/stream.h PyAudio-0.2.14/src/pyaudio/stream.h
+--- PyAudio-0.2.14.orig/src/pyaudio/stream.h	2022-12-26 05:04:07.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/stream.h	2024-12-26 00:18:47.040291000 +0100
+@@ -19,7 +19,8 @@
+     PyObject *callback;
+     // Frame size, in bytes, for input and output. Equal to
+     // num channels x bytes per sample.
+-    unsigned int frame_size;
++    unsigned int input_frame_size;
++    unsigned int output_frame_size;
+     // Main thread ID.
+     long main_thread_id;
+   } context;
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/stream_io.c PyAudio-0.2.14/src/pyaudio/stream_io.c
+--- PyAudio-0.2.14.orig/src/pyaudio/stream_io.c	2022-12-26 05:04:07.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/stream_io.c	2024-12-26 01:56:01.048047100 +0100
+@@ -42,7 +42,8 @@
+   int return_val = paAbort;
+   PyAudioStream *stream = (PyAudioStream *)user_data;
+   PyObject *py_callback = stream->context.callback;
+-  unsigned int bytes_per_frame = stream->context.frame_size;
++  unsigned int input_bytes_per_frame = stream->context.input_frame_size;
++  unsigned int output_bytes_per_frame = stream->context.output_frame_size;
+   long main_thread_id = stream->context.main_thread_id;
+ 
+   // Prepare arguments for calling the python callback:
+@@ -60,7 +61,7 @@
+   PyObject *py_input_samples;
+   if (input != NULL) {
+     py_input_samples =
+-        PyBytes_FromStringAndSize(input, bytes_per_frame * frame_count);
++        PyBytes_FromStringAndSize(input, input_bytes_per_frame * frame_count);
+   } else {
+     // Output stream, so provide None to the callback.
+     Py_INCREF(Py_None);
+@@ -131,7 +132,7 @@
+   // Copy bytes for playback only if this is an output stream:
+   if (output) {
+     char *output_data = (char *)output;
+-    size_t pa_max_num_bytes = bytes_per_frame * frame_count;
++    size_t pa_max_num_bytes = output_bytes_per_frame * frame_count;
+     // Though PyArg_ParseTuple returns the size of samples_for_output in
+     // output_len, a signed Py_ssize_t, that value should never be negative.
+     assert(output_len >= 0);
+@@ -259,7 +260,7 @@
+     return NULL;
+   }
+ 
+-  int num_bytes = total_frames * stream->context.frame_size;
++  int num_bytes = total_frames * stream->context.input_frame_size;
+ #ifdef VERBOSE
+   fprintf(stderr, "Allocating %d bytes\n", num_bytes);
+ #endif
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/stream_lifecycle.c PyAudio-0.2.14/src/pyaudio/stream_lifecycle.c
+--- PyAudio-0.2.14.orig/src/pyaudio/stream_lifecycle.c	2022-12-26 05:04:07.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/stream_lifecycle.c	2024-12-26 02:37:27.741403500 +0100
+@@ -9,13 +9,14 @@
+ #include "portaudio.h"
+ 
+ #include "mac_core_stream_info.h"
++#include "wasapi_stream_info.h"
+ #include "stream.h"
+ #include "stream_io.h"
+ 
+ #define DEFAULT_FRAMES_PER_BUFFER paFramesPerBufferUnspecified
+ 
+ PyObject *PyAudio_OpenStream(PyObject *self, PyObject *args, PyObject *kwargs) {
+-  int rate, channels;
++  int rate, input_channels, output_channels;
+   int input_device_index = -1;
+   int output_device_index = -1;
+   PyObject *input_device_index_arg = NULL;
+@@ -27,7 +28,8 @@
+   PyObject *output_device_index_long;
+ 
+   static char *kwlist[] = {"rate",
+-                           "channels",
++                           "input_channels",
++                           "output_channels",
+                            "format",
+                            "input",
+                            "output",
+@@ -39,9 +41,12 @@
+                            "stream_callback",
+                            NULL};
+ 
+-#ifdef MACOS
++#if defined(MACOS)
+   PyAudioMacCoreStreamInfo *input_host_specific_stream_info = NULL;
+   PyAudioMacCoreStreamInfo *output_host_specific_stream_info = NULL;
++#elif defined(WINDOWS)
++  PyAudioWasapiStreamInfo *input_host_specific_stream_info = NULL;
++  PyAudioWasapiStreamInfo *output_host_specific_stream_info = NULL;
+ #else
+   /* mostly ignored...*/
+   PyObject *input_host_specific_stream_info = NULL;
+@@ -55,23 +60,27 @@
+ 
+   // clang-format off
+   if (!PyArg_ParseTupleAndKeywords(args, kwargs,
+-#ifdef MACOS
+-                                   "iik|iiOOiO!O!O",
++#if defined(MACOS) || defined(WINDOWS)
++                                   "iiik|iiOOiO!O!O",
+ #else
+-                                   "iik|iiOOiOOO",
++                                   "iiik|iiOOiOOO",
+ #endif
+                                    kwlist,
+-                                   &rate, &channels, &format,
++                                   &rate, &input_channels, &output_channels, &format,
+                                    &input, &output,
+                                    &input_device_index_arg,
+                                    &output_device_index_arg,
+                                    &frames_per_buffer,
+-#ifdef MACOS
++#if defined(MACOS)
+                                    &PyAudioMacCoreStreamInfoType,
++#elif defined(WINDOWS)
++                                   &PyAudioWasapiStreamInfoType,
+ #endif
+                                    &input_host_specific_stream_info,
+-#ifdef MACOS
++#if defined(MACOS)
+                                    &PyAudioMacCoreStreamInfoType,
++#elif defined(WINDOWS)
++                                   &PyAudioWasapiStreamInfoType,
+ #endif
+                                    &output_host_specific_stream_info,
+                                    &stream_callback)) {
+@@ -136,7 +145,7 @@
+     return NULL;
+   }
+ 
+-  if (channels < 1) {
++  if (input_channels < 1 && output_channels < 1) {
+     PyErr_SetString(PyExc_ValueError, "Invalid audio channels");
+     return NULL;
+   }
+@@ -159,12 +168,12 @@
+       return NULL;
+     }
+ 
+-    output_parameters.channelCount = channels;
++    output_parameters.channelCount = output_channels;
+     output_parameters.sampleFormat = format;
+     output_parameters.suggestedLatency =
+         Pa_GetDeviceInfo(output_parameters.device)->defaultLowOutputLatency;
+     output_parameters.hostApiSpecificStreamInfo = NULL;
+-#ifdef MACOS
++#if defined(MACOS) || defined(WINDOWS)
+     if (output_host_specific_stream_info) {
+       output_parameters.hostApiSpecificStreamInfo =
+           &output_host_specific_stream_info->stream_info;
+@@ -189,12 +198,12 @@
+       return NULL;
+     }
+ 
+-    input_parameters.channelCount = channels;
++    input_parameters.channelCount = input_channels;
+     input_parameters.sampleFormat = format;
+     input_parameters.suggestedLatency =
+         Pa_GetDeviceInfo(input_parameters.device)->defaultLowInputLatency;
+     input_parameters.hostApiSpecificStreamInfo = NULL;
+-#ifdef MACOS
++#if defined(MACOS) || defined(WINDOWS)
+     if (input_host_specific_stream_info) {
+       input_parameters.hostApiSpecificStreamInfo =
+           &input_host_specific_stream_info->stream_info;
+@@ -245,7 +254,8 @@
+   }
+ 
+   stream->context.stream = pa_stream;
+-  stream->context.frame_size = Pa_GetSampleSize(format) * channels;
++  stream->context.input_frame_size = Pa_GetSampleSize(format) * input_channels;
++  stream->context.output_frame_size = Pa_GetSampleSize(format) * output_channels;
+   stream->context.main_thread_id = PyThreadState_Get()->thread_id;
+   stream->context.callback = NULL;
+   if (stream_callback) {
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/wasapi_stream_info.c PyAudio-0.2.14/src/pyaudio/wasapi_stream_info.c
+--- PyAudio-0.2.14.orig/src/pyaudio/wasapi_stream_info.c	1970-01-01 01:00:00.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/wasapi_stream_info.c	2024-12-26 21:37:36.167992300 +0100
+@@ -0,0 +1,66 @@
++#ifdef WINDOWS
++
++#include "wasapi_stream_info.h"
++
++#ifndef PY_SSIZE_T_CLEAN
++#define PY_SSIZE_T_CLEAN
++#endif
++#include "Python.h"
++#include "portaudio.h"
++#include "pa_win_wasapi.h"
++
++static void dealloc(PyAudioWasapiStreamInfo *self) {
++  Py_TYPE(self)->tp_free((PyObject *)self);
++}
++
++static int init(PyObject *_self, PyObject *args, PyObject *kwargs) {
++  PyAudioWasapiStreamInfo *self = (PyAudioWasapiStreamInfo *)_self;
++
++  unsigned long flags = 0;
++  static char *kwlist[] = {"flags", NULL};
++  if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|k", kwlist, &flags)) {
++    return -1;
++  }
++
++  // Initialize the stream info struct with default values.
++  memset(&self->stream_info, 0, sizeof(PaWasapiStreamInfo));
++  self->stream_info.size = sizeof(PaWasapiStreamInfo);
++  self->stream_info.hostApiType = paWASAPI;
++  self->stream_info.version = 1;
++  self->stream_info.flags = flags;
++
++  return 0;
++}
++
++static PyObject *get_flags(PyAudioWasapiStreamInfo *self, void *closure) {
++  return PyLong_FromUnsignedLong(self->stream_info.flags);
++}
++
++static int antiset(PyAudioWasapiStreamInfo *self, PyObject *value,
++                   void *closure) {
++  /* read-only: do not allow users to change values */
++  PyErr_SetString(PyExc_AttributeError,
++                  "Fields read-only: cannot modify values");
++  return -1;
++}
++
++static PyGetSetDef get_setters[] = {
++    {"flags", (getter)get_flags, (setter)antiset, "flags", NULL},
++    {NULL}};
++
++PyTypeObject PyAudioWasapiStreamInfoType = {
++    // clang-format off
++    PyVarObject_HEAD_INIT(NULL, 0)
++    // clang-format on
++    .tp_name = "_portaudio.PaWasapiStreamInfo",
++    .tp_basicsize = sizeof(PyAudioWasapiStreamInfo),
++    .tp_itemsize = 0,
++    .tp_dealloc = (destructor)dealloc,
++    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
++    .tp_doc = PyDoc_STR("Windows WASAPI Specific HostAPI configuration"),
++    .tp_getset = get_setters,
++    .tp_init = (initproc)init,
++    .tp_new = PyType_GenericNew,
++};
++
++#endif  // WINDOWS
+diff -ruN -x .mypy_cache -x .vscode PyAudio-0.2.14.orig/src/pyaudio/wasapi_stream_info.h PyAudio-0.2.14/src/pyaudio/wasapi_stream_info.h
+--- PyAudio-0.2.14.orig/src/pyaudio/wasapi_stream_info.h	1970-01-01 01:00:00.000000000 +0100
++++ PyAudio-0.2.14/src/pyaudio/wasapi_stream_info.h	2024-12-26 21:03:51.522335300 +0100
+@@ -0,0 +1,25 @@
++// Python wrapper for PaWasapiStreamInfo (Windows host-specific API).
++
++#ifndef WASAPI_STREAM_INFO_H_
++#define WASAPI_STREAM_INFO_H_
++
++#ifdef WINDOWS
++
++#ifndef PY_SSIZE_T_CLEAN
++#define PY_SSIZE_T_CLEAN
++#endif
++#include "Python.h"
++#include "portaudio.h"
++#include "pa_win_wasapi.h"
++
++typedef struct {
++  // clang-format off
++  PyObject_HEAD
++  // clang-format on
++  PaWasapiStreamInfo stream_info;
++} PyAudioWasapiStreamInfo;
++
++extern PyTypeObject PyAudioWasapiStreamInfoType;
++
++#endif  // WINDOWS
++#endif  // WASAPI_STREAM_INFO_H_

@@ -1,167 +1,150 @@
 #!/bin/bash
 # Library builder script
 #
-# Copyright (C) 2020-2022 Svein Seldal
+# Copyright (C) 2020-2024 Svein Seldal
 # This source code is licensed under the MIT license found in the LICENSE file
 # in the root directory for this source tree.
 #
 shopt -s nullglob
 
 # Tool version
-TOOLVERSION='5'
+TOOLVERSION='6'
 
 # Directory to place output into
 dist=dist
-
 
 # Path to project dir
 rpath () {(cd "$1" && pwd)}
 base="$(rpath "$(dirname "${BASH_SOURCE[0]}" )/..")"
 cd "$base"
 
-
-# Load architecture info
+# Load architecture info and functions
 . "$base/bin/arch.sh"
-
-
-# -- Functions
-unpack() {
-    name="$1"
-    dir="$2"
-    shift 2
-
-    if [[ ! -d "$dir" ]]; then
-        case "$name" in
-            *.tar|*.tgz|*.tar.xz|*.tar.gz)
-                ( set -ex
-                  tar -xf "$name"
-                ) || exit 1
-                ;;
-            *.zip)
-                ( set -ex
-                  unzip "$name" -d "$dir"
-                ) || exit 1
-                ;;
-            *)
-                echo "ERROR: Don't know how to unpack '$name'"
-                exit 1
-        esac
-    fi
-
-    # Patch the output
-    while [[ "$#" -gt 0 ]]; do
-        ( set -ex; cd "$dir"
-          patch -p0 <"$1"
-        ) || exit 1
-        shift
-    done
-}
-
-
-download() {
-
-    url="$1"
-    name="$2"
-    if [[ ! "$name" ]]; then
-        name="${url##*/}"
-    fi
-    #shift
-
-    # Download
-    if [[ ! -e "$name" ]]; then
-        ( set -ex
-          curl -# -L "$url" -o "$name"
-        ) || exit 1
-    fi
-}
-
-
-build() {
-
-    dir="$1"
-    shift
-
-    # Build
-    ( set -ex
-      cd "$dir"
-      _dist="$(cd .. && pwd)/$dist"
-      PKG_CONFIG_PATH="$_dist/lib/pkgconfig" CPPFLAGS="-I$_dist/include" ./configure --prefix="$_dist" "$@"
-      make -j5
-      make install
-    ) || exit 1
-
-}
-
+. "$base/bin/functions.sh"
 
 # Go to build dir
-mkdir -p build
-cd build
+[[ "$1" ]] && build="$1" || build=build
+mkdir -p "$build"
+cd "$build"
+
+# Set to 1 if to build with ASIO support
+with_asio=
+
+
+#
+# BUILDING PORTAUDIO
+# ========================================
+# Required by pyaudio
+#
+
+prepare_portaudio() {
+    padir="$1"
+
+    # url=https://github.com/sveinse/portaudio.git
+    # branch=v19.7.0-sveinse
+    # branch=master-sveinse
+    # branch=feature-wasapi-spatial
+
+    # Use the official portaudio repo
+    url=https://github.com/PortAudio/portaudio.git
+    branch=master
+
+    ( set -ex
+      rm -rf $padir
+      git clone $url -b $branch $padir
+      cd $padir
+      # Custom patches
+      git apply $base/patches/portaudio-exports.diff
+    ) || exit 1
+
+    # Extract the version
+    v="$(grep -oP '(?<=PortAudio VERSION )([\d.]*)' "$padir/CMakeLists.txt")-$(cd $padir && git log -1 --pretty=format:%h)"
+
+    if [[ "$with_asio" ]]; then
+      download https://www.steinberg.net/asiosdk asiosdk.zip
+      asioopts="-DPA_USE_ASIO=ON -DASIO_SDK_ZIP_PATH="$base/build/asiosdk.zip""
+    fi
+}
+
 
 if [[ "$sys" = "windows" ]]; then
 
-    # --- WINDOWS BUILD START ---
-
-    # Set to 1 if to build with ASIO support
-    with_asio=
-
-    #
-    # BUILDING PORTAUDIO
-    #
     build_portaudio() {
-        port=portaudio
-        #branch=feature-wasapi-spatial
-        #branch=v19.7.0-sveinse
-        branch=master-sveinse
 
+        log "Building PortAudio"
+        clear $dist
+
+        padir=portaudio
+        prepare_portaudio portaudio
+
+        # Configure and build
+        find_cmake  # Sets $cmake
+        release=RelWithDebInfo
         ( set -ex
-          rm -rf $port
-          #git clone $base/../__upstream/portaudio -b $branch $port
-          git clone git@github.com:sveinse/portaudio.git -b $branch $port
+          cd $padir
+          "$cmake" \
+            -G "Visual Studio 17 2022" -A "$arch" \
+            -DCMAKE_BUILD_TYPE=$release \
+            -DPA_BUILD_SHARED_LIBS=ON \
+            $asioopts \
+            -S . -B build
+          "$cmake" \
+            --build build --config $release
         ) || exit 1
 
-        if [[ "$with_asio" ]]; then
-          download https://www.steinberg.net/asiosdk asiosdk.zip
-          unpack   asiosdk.zip asiosdk
-          mv asiosdk/*/* asiosdk/
-        fi
-
-        # Find cmake.exe candidates
-        cmk=(/c/"Program Files"*/"Microsoft Visual Studio"/*/*/*/*/*/*/CMake/Cmake/bin/cmake.exe)
-        if [[ ${#cmk[@]} -eq 0 ]]; then
-            echo "ERROR  Unable to find any installed cmake.exe for automatic build."
-            echo "Press enter to continue..."
-            read
-        else
-            cmk="${cmk[0]}"
-            ( set -ex
-              cd "portaudio"
-              mkdir -p out
-              cd out
-              "$cmk" .. -G "Visual Studio 17 2022" -A "$arch"
-              "$cmk" --build . --config Release
-            ) || exit 1
-        fi
-
-        case "$arch" in
-            win32) vd=x86 ;;
-            x64) vd=x64 ;;
-            *) echo "Unknown arch '$arch'"; exit 1 ;;
-        esac
-
         # Extract the compiled output
-        d=portaudio/out/Release
+        d=$padir/build/$release
         ( set -ex
           mkdir -p $dist/include $dist/lib
           cp -av portaudio/include/*.h $dist/include/
           cp -av $d/* $dist/lib/
+          rm $dist/lib/*.pdb $dist/lib/*.exp
         ) || exit 1
+        tardir $dist "portaudio-${v}-${suffix}"
+
+        log "PortAudio version $v complete"
     }
 
+else  # Linux/MacOSX
 
-    #
-    # LIBSNDFILE
-    #
+    build_portaudio() {
+
+        log "Building PortAudio"
+        clear $dist
+
+        padir=portaudio
+        prepare_portaudio $padir
+
+        case "$sys" in
+            linux)
+                build $padir --without-asihpi --with-alsa --without-oss --disable-static
+                ;;
+            macosx)
+                build $padir --disable-mac-universal
+                cp -av $padir/include/pa_mac_core.h $dist/include
+                ;;
+        esac
+        tardir $dist "portaudio-${v}-${suffix}"
+    }
+
+    # --- LINUX/MACOSX BUILD DONE ---
+
+fi
+
+
+#
+# BUILDING LIBSNDFILE
+# =======================================
+# Required by pysndfile
+#
+
+if [[ "$sys" = "windows" ]]; then
+
     build_libsndfile() {
+
+        log "Collecting Libsndfile"
+
+        clear $dist
         case "$arch" in
             win32) vd=win32 ;;
             x64) vd=win64 ;;
@@ -169,101 +152,72 @@ if [[ "$sys" = "windows" ]]; then
         esac
 
         # Get the official windows release
-        d=libsndfile-1.1.0-${vd}
-        download https://github.com/libsndfile/libsndfile/releases/download/1.1.0/$d.zip
+        v=1.2.2
+        d=libsndfile-${v}-${vd}
+        download https://github.com/libsndfile/libsndfile/releases/download/${v}/$d.zip
         unpack   $d.zip $d
-        find $d
-        mkdir -p $dist/include $dist/lib
-        cp -av $d/*/bin/*.dll $d/*/lib/*.lib $dist/lib
-        cp -av $d/*/include/*.h $d/*/include/*.hh $dist/include/
+
+        # Extract the gathered files
+        ( set -ex
+          mkdir -p $dist/include $dist/lib
+          cp -av $d/*/bin/*.dll $d/*/lib/*.lib $dist/lib
+          cp -av $d/*/include/*.h $d/*/include/*.hh $dist/include/
+        ) || exit 1
+        tardir $dist "libsndfile-${v}-${suffix}"
+
+        log "Libsndfile version $v complete"
     }
 
+else  # Linux/MacOSX
 
-    #
-    # WHAT TO BUILD
-    #
-    build_portaudio
-    build_libsndfile
-
-
-    #
-    # COLLECTING DIST
-    #
-    ( cd "dist"; set -ex
-      tar -cvJf $base/$archive.tar.xz .
-    ) || exit 1
-
-    # --- WINDOWS BUILD END ---
-
-else
-
-    # --- LINUX/MACOSX BUILD START ---
-
-    #
-    # BUILDING LIBSNDFILE
-    #
     build_libsndfile() {
-        d=libogg-1.3.4
+
+        log "Building libsndfile"
+
+        d=libogg-1.3.5
         log "Building $d"
         download http://downloads.xiph.org/releases/ogg/$d.tar.xz
-        unpack   $d.tar.xz $d ../../patches/patch-libogg-and-stdint-h.diff
-        build    $d
+        unpack   $d.tar.xz $d $base/patches/patch-libogg-and-stdint-h.diff
+        build    $d --disable-static
 
-        d=libvorbis-1.3.6
+        d=libvorbis-1.3.7
         log "Building $d"
         download http://downloads.xiph.org/releases/vorbis/$d.tar.xz
         unpack   $d.tar.xz $d
-        build    $d
+        build    $d --disable-static
 
-        d=flac-1.3.3
+        d=flac-1.4.3
         log "Building $d"
         download https://ftp.osuosl.org/pub/xiph/releases/flac/$d.tar.xz
         unpack   $d.tar.xz $d
-        build    $d
+        build    $d --disable-static
 
-        d=libsndfile-1.0.28
+        d=opus-1.5.2
         log "Building $d"
-        download http://www.mega-nerd.com/libsndfile/files/$d.tar.gz
+        download https://ftp.osuosl.org/pub/xiph/releases/opus/$d.tar.gz
         unpack   $d.tar.gz $d
-        build    $d
-    }
+        build    $d --disable-static
 
-
-    #
-    # BUILDING PORTAUDIO
-    #
-    build_portaudio() {
-        d=portaudio
+        v=1.2.2
+        d=libsndfile-$v
         log "Building $d"
+        download https://github.com/libsndfile/libsndfile/releases/download/$v/$d.tar.xz
+        unpack   $d.tar.xz $d
+        build    $d --disable-static
 
-        #download http://www.portaudio.com/archives/pa_stable_v190600_20161030.tgz $d
-        ( set -ex
-          rm -rf $d
-          git clone git@github.com:sveinse/portaudio.git -b sveinse-master $d
-        ) || exit 1
+        rm -rf $dist/share
+        tardir $dist "libsndfile-${v}-${suffix}"
 
-        case "$sys" in
-            linux)
-                build $d --without-asihpi --with-alsa --without-oss
-                ;;
-            macosx)
-                build $d --disable-mac-universal
-                cp -av $d/include/pa_mac_core.h $dist/include
-                ;;
-        esac
+        log "Libsndfile complete"
     }
 
-
-    #
-    # WHAT TO BUILD
-    #
-    build_libsndfile
-    build_portaudio
+fi
 
 
-    #
-    # MACOSX DYLIB LOAD REWRITE
-    # 
+#
+# MACOSX DYLIB LOAD REWRITE
+#
+skip() {
     if [[ "$sys" = "macosx" ]]; then
         venv="venv-macosx"
 
@@ -276,12 +230,11 @@ else
         fi
         venv="$(rpath "$venv")"
         python="$venv/bin/python"
-        pip="$venv/bin/pip"
+        pip="$python -m pip"
 
         log "Installing packages"
         ( set -ex
-          # Use this technique to upgrade pip. Calling pip directly will fail on Windows
-          $python -m pip install --upgrade pip wheel setuptools
+          $pip install --upgrade pip wheel setuptools
           $pip install macholib
         ) || exit 1
 
@@ -290,25 +243,16 @@ else
           $python $base/bin/macosx_dylib_loadpath.py $PWD *.so *.dylib
         ) || exit 1
     fi
+}
 
 
-    #
-    # COLLECTING DIST
-    #
-    ( cd "dist"; set -ex
-      tar -cvJf $base/$archive-complete.tar.xz .
-    ) || exit 1
+#
+# WHAT TO BUILD
+#
+build_portaudio
+build_libsndfile
 
-    ( cd "dist"; set -ex
-      files=(include lib/lib*.so* lib/*.dylib)
-      tar -cvJf $base/$archive.tar.xz "${files[@]}"
-    ) || exit 1
-
-
-    # --- LINUX/MACOSX BUILD DONE ---
-
-fi
 
 log "Complete"
 cd ..
-rm -rf build dist
+rm -rf "$build" "$dist"

@@ -1,0 +1,40 @@
+diff -ru pysndfile-1.4.6.orig/setup.py pysndfile-1.4.6/setup.py
+--- pysndfile-1.4.6.orig/setup.py	2024-10-11 02:11:29.340115000 +0200
++++ pysndfile-1.4.6/setup.py	2024-12-25 16:22:52.251598800 +0100
+@@ -15,6 +15,7 @@
+ from distutils.core import Extension
+ from distutils.command.build_ext import build_ext
+ from distutils.command.sdist import sdist 
++from distutils.ccompiler import get_default_compiler
+ import sysconfig
+ 
+ import os
+@@ -43,7 +44,7 @@
+ 
+             inc_dir = Path(dir) / "include"
+             lib_dir = Path(dir) / "lib"
+-            if (((lib_dir / "libsndfile.so").exists() or (lib_dir / "libsndfile.dylib").exists())
++            if (((lib_dir / "libsndfile.so").exists() or (lib_dir / "libsndfile.dylib").exists() or (lib_dir / "sndfile.dll").exists())
+                 and (inc_dir / "sndfile.h").exists()):
+                 lib_dir = str(lib_dir)
+                 inc_dir = str(inc_dir)
+@@ -135,14 +136,17 @@
+ 
+     def finalize_options(self) :
+         build_ext.finalize_options(self)
++        compiler = self.compiler or get_default_compiler()
+         if not compile_for_RTD:
+             auto_sndfile_libdir, auto_sndfile_incdir = find_libsndfile()
+             if self.sndfile_libdir  is not None :
+                 self.library_dirs.append(self.sndfile_libdir)
+-                self.rpath.append(self.sndfile_libdir)
++                if compiler not in ["msvc"]:
++                    self.rpath.append(self.sndfile_libdir)
+             elif auto_sndfile_libdir is not None:
+                 self.library_dirs.append(auto_sndfile_libdir)
+-                self.rpath.append(auto_sndfile_libdir)
++                if compiler not in ["msvc"]:
++                    self.rpath.append(auto_sndfile_libdir)
+             else:        
+                 print(
+ f"""libsndfile library was not found in standard locations: {[ss for ss in sndfile_locations if ss]}. Please either set envvar SNDFILE_INSTALL_DIR to the directory 
